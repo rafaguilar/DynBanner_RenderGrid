@@ -23,32 +23,31 @@ export const BannerPreviewCard: React.FC<BannerVariation> = ({
 
   useEffect(() => {
 
-    const indexHtmlPath = Object.keys(files).find(path => path.endsWith('index.html'));
-    let finalHtml = indexHtmlPath ? files[indexHtmlPath] : "<html><body>Error: index.html not found in template.</body></html>";
+    const indexHtmlPath = 'index.html';
+    let finalHtml = files[indexHtmlPath] ? files[indexHtmlPath] : "<html><body>Error: index.html not found in template.</body></html>";
     
-    if (!indexHtmlPath) {
+    if (!files[indexHtmlPath]) {
       setSrcDoc(finalHtml);
       return;
     }
     
     // Create blobs for CSS and JS files and generate object URLs
     const blobUrls: string[] = [];
-    const scriptBlobs: {[key: string]: string} = {};
 
-    Object.keys(files).filter(path => path.endsWith('.js')).forEach(path => {
-        const blob = new Blob([files[path]], { type: 'application/javascript' });
-        const url = URL.createObjectURL(blob);
-        blobUrls.push(url);
-        scriptBlobs[path] = url;
-        finalHtml = finalHtml.replace(new RegExp(`src=["'](./)?${path}["']`), `src="${url}"`);
-    })
-
-    Object.keys(files).filter(path => path.endsWith('.css')).forEach(path => {
-        const blob = new Blob([files[path]], { type: 'text/css' });
-        const url = URL.createObjectURL(blob);
-        blobUrls.push(url);
-        finalHtml = finalHtml.replace(new RegExp(`href=["'](./)?${path}["']`), `href="${url}"`);
-    })
+    Object.keys(files).forEach(path => {
+        const fileContent = files[path];
+        if (path.endsWith('.js')) {
+            const blob = new Blob([fileContent], { type: 'application/javascript' });
+            const url = URL.createObjectURL(blob);
+            blobUrls.push(url);
+            finalHtml = finalHtml.replace(new RegExp(`src=["'](./)?${path}["']`, 'g'), `src="${url}"`);
+        } else if (path.endsWith('.css')) {
+            const blob = new Blob([fileContent], { type: 'text/css' });
+            const url = URL.createObjectURL(blob);
+            blobUrls.push(url);
+            finalHtml = finalHtml.replace(new RegExp(`href=["'](./)?${path}["']`, 'g'), `href="${url}"`);
+        }
+    });
     
     setSrcDoc(finalHtml);
 
@@ -60,9 +59,7 @@ export const BannerPreviewCard: React.FC<BannerVariation> = ({
   const handleDownload = async () => {
     const zip = new JSZip();
     for (const fileName in files) {
-       // Get base name of the file
-       const baseName = fileName.split('/').pop() || fileName;
-       zip.file(baseName, files[fileName]);
+       zip.file(fileName, files[fileName]);
     }
     const blob = await zip.generateAsync({ type: "blob" });
     const link = document.createElement("a");
@@ -99,5 +96,3 @@ export const BannerPreviewCard: React.FC<BannerVariation> = ({
     </Card>
   );
 };
-
-    

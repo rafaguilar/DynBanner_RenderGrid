@@ -56,34 +56,39 @@ export function BannerBuildr() {
       const zip = await JSZip.loadAsync(file);
       const files: TemplateFiles = {};
       let dynamicJsContent: string | null = null;
+      let hasIndexHtml = false;
   
       const filePromises = Object.keys(zip.files).map(async (filename) => {
         const fileData = zip.files[filename];
         if (!fileData.dir) {
           const content = await fileData.async("string");
-          files[filename] = content;
-          if (filename.endsWith("Dynamic.js")) {
+          const normalizedFilename = filename.split('/').pop() || filename;
+          files[normalizedFilename] = content;
+
+          if (normalizedFilename.toLowerCase() === "dynamic.js") {
             dynamicJsContent = content;
+          }
+          if (normalizedFilename.toLowerCase() === "index.html") {
+            hasIndexHtml = true;
           }
         }
       });
       await Promise.all(filePromises);
-  
-      const hasIndexHtml = Object.keys(files).some(path => path.endsWith('index.html'));
   
       if (!hasIndexHtml || !dynamicJsContent) {
         throw new Error("Template must include index.html and Dynamic.js");
       }
   
       setTemplateFiles(files);
-      if (dynamicJsContent) {
-        setJsVariables(['devDynamicContent.parent[0].custom_offer']);
-      }
+      setJsVariables(['devDynamicContent.parent[0].custom_offer']);
+
       toast({ title: "Success", description: "Template uploaded successfully." });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Failed to process zip file.";
       toast({ title: "Error", description: errorMessage, variant: "destructive" });
       setTemplateFileName("");
+      setTemplateFiles(null);
+      setJsVariables([]);
     } finally {
       setIsLoading(false);
     }
@@ -111,8 +116,7 @@ export function BannerBuildr() {
   };
 
   useEffect(() => {
-    const dynamicJsPath = templateFiles ? Object.keys(templateFiles).find(p => p.endsWith('Dynamic.js')) : null;
-    const dynamicJsContent = dynamicJsPath && templateFiles ? templateFiles[dynamicJsPath] : null;
+    const dynamicJsContent = templateFiles ? templateFiles['Dynamic.js'] : null;
 
     if (dynamicJsContent && csvColumns.length > 0 && !columnMapping) {
       const runMapping = async () => {
@@ -148,7 +152,7 @@ export function BannerBuildr() {
 
     try {
       const newVariations: BannerVariation[] = csvData.map((row, index) => {
-        const dynamicJsPath = Object.keys(templateFiles).find(path => path.endsWith('Dynamic.js')) || 'Dynamic.js';
+        const dynamicJsPath = 'Dynamic.js';
         let newDynamicJsContent = templateFiles[dynamicJsPath] || "";
         
         for (const csvColumn in columnMapping) {
@@ -156,10 +160,13 @@ export function BannerBuildr() {
             const jsVariablePath = columnMapping[csvColumn];
             const valueToSet = row[csvColumn];
             
-            // This is now highly specific to your use case
             if (jsVariablePath === 'devDynamicContent.parent[0].custom_offer') {
                 const regex = /(devDynamicContent\.parent\[0\]\.custom_offer\s*=\s*['"])([^'"]*)(['"]?)/;
-                newDynamicJsContent = newDynamicJsContent.replace(regex, `$1${valueToSet}$3`);
+                if (regex.test(newDynamicJsContent)) {
+                  newDynamicJsContent = newDynamicJsContent.replace(regex, `$1${valueToSet}$3`);
+                } else {
+                  console.warn(`Could not find "${jsVariablePath}" in Dynamic.js to replace.`);
+                }
             }
           }
         }
@@ -195,8 +202,7 @@ export function BannerBuildr() {
       const folder = zip.folder(variation.name);
       if(folder){
         for (const fileName in variation.files) {
-            const baseName = fileName.split('/').pop() || fileName;
-            folder.file(baseName, variation.files[fileName]);
+            folder.file(fileName, variation.files[fileName]);
         }
       }
     }
