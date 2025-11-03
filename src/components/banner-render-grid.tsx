@@ -31,6 +31,7 @@ import JSZip from "jszip";
 import { Badge } from "./ui/badge";
 import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 import { Label } from "./ui/label";
+import path from "path";
 
 export type CsvData = Record<string, string>[];
 export type ColumnMapping = Record<string, string>;
@@ -157,11 +158,15 @@ export function BannerRenderGrid() {
   };
 
   useEffect(() => {
-    // Reset mapping when tier changes
-    setColumnMapping(null);
-    setIsMappingComplete(false);
+    // Reset mapping when tier changes, to allow re-running the AI
+    if (columnMapping !== null || isMappingComplete) {
+      setColumnMapping(null);
+      setIsMappingComplete(false);
+    }
+  }, [selectedTier]);
 
-    if (dynamicJsContent && csvColumns.length > 0 && selectedTier) {
+  useEffect(() => {
+    if (dynamicJsContent && csvColumns.length > 0 && selectedTier && !columnMapping && !isMappingComplete) {
       const runMapping = async () => {
         setIsLoading(true);
         setLoadingMessage("AI is mapping columns...");
@@ -186,7 +191,7 @@ export function BannerRenderGrid() {
       };
       runMapping();
     }
-  }, [dynamicJsContent, csvColumns, selectedTier, toast]);
+  }, [dynamicJsContent, csvColumns, selectedTier, columnMapping, isMappingComplete]);
 
 
   const handleGenerateBanners = async () => {
@@ -315,18 +320,16 @@ export function BannerRenderGrid() {
     ? csvColumns.filter((col) => {
         if (selectedTier === "T1") return col === "custom_offer";
         if (selectedTier === "T2") return col === "offerType";
-        return false; 
-      })
-    : [];
-
-  const allRelevantJsVariables = selectedTier
-    ? jsVariables.filter(
-        (v) =>
-          !v.includes("custom_offer") ||
-          (selectedTier === "T1" && v.includes("custom_offer")) ||
-          (selectedTier === "T2" && v.includes("custom_offer"))
-      )
-    : jsVariables;
+        return true; // Show all other columns
+      }).filter(col => col !== 'custom_offer' && col !== 'offerType')
+    : csvColumns;
+    
+    // Add the relevant tier column to the top
+    if (selectedTier === "T1" && csvColumns.includes('custom_offer')) {
+        filteredCsvColumns.unshift('custom_offer');
+    } else if (selectedTier === "T2" && csvColumns.includes('offerType')) {
+        filteredCsvColumns.unshift('offerType');
+    }
 
 
   const renderStep = (
@@ -436,7 +439,7 @@ export function BannerRenderGrid() {
         {showMappingCard && (
             <ColumnMappingCard
                 csvColumns={filteredCsvColumns}
-                jsVariables={allRelevantJsVariables}
+                jsVariables={jsVariables}
                 initialMapping={columnMapping || {}}
                 onMappingConfirm={(finalMapping) => {
                     const combinedMapping = { ...columnMapping, ...finalMapping };
@@ -510,5 +513,3 @@ export function BannerRenderGrid() {
     </div>
   );
 }
-
-    
