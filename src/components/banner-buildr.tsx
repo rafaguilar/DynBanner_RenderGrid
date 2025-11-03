@@ -99,7 +99,8 @@ export function BannerBuildr() {
           const zipEntry = zip.files[filename];
           if (!zipEntry.dir) {
               const content = await zipEntry.async('nodebuffer');
-              allFiles[path.basename(filename)] = content;
+              // The server API now flattens the path, so just use filename
+              allFiles[zipEntry.name.split('/').pop() || filename] = content;
           }
       }
       setTemplateFiles(allFiles);
