@@ -29,8 +29,6 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import JSZip from "jszip";
 import { Badge } from "./ui/badge";
-import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
-import { Label } from "./ui/label";
 import path from "path";
 
 export type CsvData = Record<string, string>[];
@@ -44,7 +42,7 @@ export type BannerVariation = {
   files?: Record<string, string | Buffer>; // For download purposes
 };
 
-type Tier = 'T1' | 'T2';
+export type Tier = 'T1' | 'T2';
 
 export function BannerRenderGrid() {
   const [templateFile, setTemplateFile] = useState<File | null>(null);
@@ -67,7 +65,8 @@ export function BannerRenderGrid() {
   const [originalBanner, setOriginalBanner] = useState<BannerVariation | null>(null);
   const [dynamicJsContent, setDynamicJsContent] = useState<string | null>(null);
   const [detectedTier, setDetectedTier] = useState<Tier | null>(null);
-  const [selectedTier, setSelectedTier] = useState<Tier | null>(null);
+  const [finalTier, setFinalTier] = useState<Tier | null>(null);
+  const [isAiMappingRunning, setIsAiMappingRunning] = useState(false);
 
 
   const handleTemplateUpload = async (file: File) => {
@@ -99,10 +98,9 @@ export function BannerRenderGrid() {
       
       setDynamicJsContent(dynamicJsContent || "");
       setDetectedTier(tier);
-      setSelectedTier(tier);
-
+      
       if (tier) {
-         toast({ title: "Tier Detected", description: `Template identified as ${tier}. You can switch tiers if needed.` });
+         toast({ title: "Tier Detected", description: `Template identified as ${tier}.` });
       }
       
       const extractedVars = dynamicJsContent?.match(/devDynamicContent\.[a-zA-Z0-9_\[\]\.]+/g) || [];
@@ -157,57 +155,55 @@ export function BannerRenderGrid() {
     });
   };
 
-  useEffect(() => {
-    // Reset mapping when tier changes, to allow re-running the AI
-    setColumnMapping(null);
-    setIsMappingComplete(false);
-  }, [selectedTier]);
-
-  useEffect(() => {
-    if (dynamicJsContent && csvColumns.length > 0 && selectedTier && !columnMapping && !isMappingComplete) {
-      const runMapping = async () => {
-        setIsLoading(true);
+  const runAiMapping = async () => {
+    if (dynamicJsContent && csvColumns.length > 0 && !isAiMappingRunning) {
+        setIsAiMappingRunning(true);
         setLoadingMessage("AI is mapping columns...");
         try {
-          const mapping = await getColumnMapping({
+            const mapping = await getColumnMapping({
             dynamicJsContent: dynamicJsContent,
             csvColumns: csvColumns,
-          });
-          setColumnMapping(mapping);
-          if (Object.keys(mapping).length > 0) {
+            });
+            setColumnMapping(mapping);
+            if (Object.keys(mapping).length > 0) {
             toast({ title: "AI Complete", description: "Column mapping suggested. Please review." });
-          } else {
+            } else {
             toast({ title: "Manual Mapping Needed", description: "Could not map columns automatically.", variant: 'default' });
-          }
+            }
         } catch (e) {
             console.error("AI mapping failed:", e);
             toast({ title: "AI Error", description: "Proceed with manual mapping.", variant: "destructive" });
             setColumnMapping({}); 
         } finally {
-          setIsLoading(false);
+            setIsAiMappingRunning(false);
+            setLoadingMessage("");
         }
-      };
-      runMapping();
     }
-  }, [dynamicJsContent, csvColumns, selectedTier, columnMapping, isMappingComplete, toast]);
+  };
+
+  useEffect(() => {
+    if (csvColumns.length > 0 && dynamicJsContent) {
+        runAiMapping();
+    }
+  }, [csvColumns, dynamicJsContent]);
 
 
   const handleGenerateBanners = async () => {
-    if (!csvFile || !columnMapping || !templateFile || !originalBanner || !selectedTier) {
+    if (!csvFile || !columnMapping || !templateFile || !originalBanner || !finalTier) {
         toast({ title: "Warning", description: "Please complete all previous steps.", variant: "destructive" });
         return;
     };
 
     setIsLoading(true);
 
-    const tierColumn = selectedTier === 'T1' ? 'custom_offer' : 'offerType';
+    const tierColumn = finalTier === 'T1' ? 'custom_offer' : 'offerType';
     const effectiveCsvData = csvData?.filter(row => row[tierColumn] && row[tierColumn].trim() !== '') || [];
 
     if (effectiveCsvData.length === 0) {
         toast({
             variant: 'destructive',
             title: 'No Data Found',
-            description: `No rows found with data in the required column '${tierColumn}' for Tier ${selectedTier}.`
+            description: `No rows found with data in the required column '${tierColumn}' for Tier ${finalTier}.`
         });
         setIsLoading(false);
         return;
@@ -221,7 +217,7 @@ export function BannerRenderGrid() {
         formData.append('csv', csvFile);
         formData.append('columnMapping', JSON.stringify(columnMapping));
         formData.append('dynamicJsContent', dynamicJsContent || '');
-        formData.append('tier', selectedTier);
+        formData.append('tier', finalTier);
 
         const response = await fetch('/api/generate', {
             method: 'POST',
@@ -311,22 +307,8 @@ export function BannerRenderGrid() {
     setOriginalBanner(null);
     setDynamicJsContent(null);
     setDetectedTier(null);
-    setSelectedTier(null);
+    setFinalTier(null);
   }
-  
-  const filteredCsvColumns = useMemo(() => {
-    if (!selectedTier || !csvColumns.length) return [];
-    
-    const otherCols = csvColumns.filter(col => col !== 'custom_offer' && col !== 'offerType');
-    
-    if (selectedTier === "T1" && csvColumns.includes('custom_offer')) {
-        return ['custom_offer', ...otherCols];
-    } else if (selectedTier === "T2" && csvColumns.includes('offerType')) {
-        return ['offerType', ...otherCols];
-    }
-    return otherCols;
-  }, [selectedTier, csvColumns]);
-
 
   const renderStep = (
     step: number,
@@ -361,35 +343,21 @@ export function BannerRenderGrid() {
                     <p className="text-sm text-muted-foreground flex items-center"><Archive className="w-4 h-4 mr-2"/>{templateFileName}</p>
                     {detectedTier && <Badge variant="outline" className="ml-2">{detectedTier} Detected</Badge>}
                 </div>
-                {detectedTier && (
-                  <div className="p-4 border rounded-lg bg-background/50">
-                    <RadioGroup value={selectedTier ?? ""} onValueChange={(value) => setSelectedTier(value as Tier)} className="flex items-center space-x-4">
-                       <Label className="font-medium">Selected Tier:</Label>
-                        <div className="flex items-center space-x-2">
-                            <RadioGroupItem value="T1" id="t1" />
-                            <Label htmlFor="t1">T1</Label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                            <RadioGroupItem value="T2" id="t2" />
-                            <Label htmlFor="t2">T2</Label>
-                        </div>
-                    </RadioGroup>
-                    <p className="text-xs text-muted-foreground mt-2">Switch tiers to change which CSV columns are used for generation.</p>
-                  </div>
-                )}
             </CardContent>
           }
           {isComplete && csvFileName && title.includes('Data') && <CardContent><p className="text-sm text-muted-foreground flex items-center"><List className="w-4 h-4 mr-2"/>{csvFileName} ({csvData?.length} rows)</p></CardContent>}
-
         </Card>
       )
   };
   
   const bannersGenerated = bannerVariations.length > 1;
-  const showMappingCard = csvData && dynamicJsContent && !isMappingComplete && jsVariables.length > 0 && selectedTier;
+  const showMappingCard = csvData && dynamicJsContent && !isMappingComplete && jsVariables.length > 0;
   
-  const tierColumn = selectedTier === 'T1' ? 'custom_offer' : 'offerType';
-  const effectiveCsvData = csvData?.filter(row => row[tierColumn] && row[tierColumn].trim() !== '') || [];
+  const tierColumn = finalTier === 'T1' ? 'custom_offer' : 'offerType';
+  const effectiveCsvData = useMemo(() => {
+    if (!csvData || !finalTier) return [];
+    return csvData.filter(row => row[tierColumn] && row[tierColumn].trim() !== '');
+  }, [csvData, finalTier, tierColumn]);
   
   const showGenerateCard = isMappingComplete;
   const isGenerating = isLoading && loadingMessage.includes('Generating');
@@ -434,14 +402,17 @@ export function BannerRenderGrid() {
 
         {showMappingCard && (
             <ColumnMappingCard
-                csvColumns={filteredCsvColumns}
+                csvColumns={csvColumns}
                 jsVariables={jsVariables}
                 initialMapping={columnMapping || {}}
-                onMappingConfirm={(finalMapping) => {
+                onMappingConfirm={(finalMapping, tier) => {
                     setColumnMapping(finalMapping);
+                    setFinalTier(tier);
                     setIsMappingComplete(true);
                     toast({ title: "Mapping Confirmed", description: "Ready to generate banners." });
                 }}
+                detectedTier={detectedTier}
+                isAiMappingRunning={isAiMappingRunning}
             />
         )}
 
@@ -458,7 +429,7 @@ export function BannerRenderGrid() {
                     </div>
                 </CardHeader>
                 <CardContent className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                    <p className="text-sm text-muted-foreground">Ready to generate <strong>{effectiveCsvData.length || 0}</strong> unique banner variations for <strong>{selectedTier}</strong>.</p>
+                    <p className="text-sm text-muted-foreground">Ready to generate <strong>{effectiveCsvData.length || 0}</strong> unique banner variations for <strong>{finalTier}</strong>.</p>
                     <Button onClick={handleGenerateBanners} disabled={isGenerating || bannersGenerated } size="lg">
                     {isGenerating ? <Loader2 className="mr-2 animate-spin" /> : <Wand2 className="mr-2" />}
                     {bannersGenerated ? "Banners Generated" : "Generate Banners"}
@@ -468,7 +439,7 @@ export function BannerRenderGrid() {
         )}
       </div>
 
-      {isLoading && !isGenerating && (
+      {isLoading && !isGenerating && !isAiMappingRunning && (
         <div className="flex items-center justify-center gap-2 text-muted-foreground">
             <Loader2 className="animate-spin" />
             <span>{loadingMessage}</span>
