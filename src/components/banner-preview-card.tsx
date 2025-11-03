@@ -1,8 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
-import JSZip from "jszip";
+import { useState, useMemo } from "react";
 import { Button } from "./ui/button";
 import { Download } from "lucide-react";
 import type { BannerVariation } from "./banner-buildr";
