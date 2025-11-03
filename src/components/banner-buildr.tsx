@@ -61,7 +61,7 @@ export function BannerBuildr() {
         const fileData = zip.files[filename];
         if (!fileData.dir) {
           const content = await fileData.async("string");
-          files[filename] = content; // Keep full path for now
+          files[filename] = content;
           if (filename.endsWith("Dynamic.js")) {
             dynamicJsContent = content;
           }
@@ -77,14 +77,7 @@ export function BannerBuildr() {
   
       setTemplateFiles(files);
       if (dynamicJsContent) {
-        // More specific regex to find the exact variable path
-        const variableRegex = /devDynamicContent\.parent\[0\]\.custom_offer/g;
-        const matches = dynamicJsContent.match(variableRegex) || [];
-        
-        // No need to clean up as regex is specific
-        const uniqueVariables = [...new Set(matches)];
-        
-        setJsVariables(uniqueVariables);
+        setJsVariables(['devDynamicContent.parent[0].custom_offer']);
       }
       toast({ title: "Success", description: "Template uploaded successfully." });
     } catch (error) {
@@ -369,5 +362,3 @@ export function BannerBuildr() {
     </div>
   );
 }
-
-    
