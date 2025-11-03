@@ -26,7 +26,7 @@ import {
   SelectValue,
 } from "./ui/select";
 import { Button } from "./ui/button";
-import { Wand2, Check } from "lucide-react";
+import { Check } from "lucide-react";
 
 type ColumnMapping = Record<string, string>;
 
@@ -46,7 +46,20 @@ export const ColumnMappingCard: React.FC<ColumnMappingCardProps> = ({
   const [mapping, setMapping] = useState<ColumnMapping>(initialMapping);
 
   const handleMappingChange = (csvColumn: string, jsVariable: string) => {
-    setMapping((prev) => ({ ...prev, [csvColumn]: jsVariable }));
+    // Treat the special 'none' value as an empty string for the mapping logic
+    const valueToSet = jsVariable === "none" ? "" : jsVariable;
+    setMapping((prev) => ({ ...prev, [csvColumn]: valueToSet }));
+  };
+  
+  const handleConfirm = () => {
+    const finalMapping: ColumnMapping = {};
+    for (const key in mapping) {
+        // Ensure we don't pass the 'none' value up
+        if (mapping[key] && mapping[key] !== 'none') {
+            finalMapping[key] = mapping[key];
+        }
+    }
+    onMappingConfirm(finalMapping);
   };
 
   return (
@@ -80,14 +93,14 @@ export const ColumnMappingCard: React.FC<ColumnMappingCardProps> = ({
                     <TableCell className="font-medium">{col}</TableCell>
                     <TableCell>
                     <Select
-                        value={mapping[col] || ""}
+                        value={mapping[col] || "none"}
                         onValueChange={(value) => handleMappingChange(col, value)}
                     >
                         <SelectTrigger>
                         <SelectValue placeholder="Select a variable" />
                         </SelectTrigger>
                         <SelectContent>
-                        <SelectItem value="">
+                        <SelectItem value="none">
                             <em>None</em>
                         </SelectItem>
                         {jsVariables && jsVariables.length > 0 && jsVariables.map((variable) => (
@@ -101,11 +114,11 @@ export const ColumnMappingCard: React.FC<ColumnMappingCardProps> = ({
                 </TableRow>
                 ))}
             </TableBody>
-            </Table>>
+            </Table>
         </div>
       </CardContent>
       <CardFooter>
-        <Button onClick={() => onMappingConfirm(mapping)} className="ml-auto">
+        <Button onClick={handleConfirm} className="ml-auto">
           <Check className="mr-2" /> Confirm Mapping
         </Button>
       </CardFooter>
