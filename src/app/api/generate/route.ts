@@ -83,38 +83,26 @@ export async function POST(req: NextRequest) {
             
             // Standard mapping
             for (const csvColumn in columnMapping) {
-                if (row[csvColumn] && columnMapping[csvColumn]) {
-                     // Tier-based logic is handled separately below
-                    if (csvColumn === 'custom_offer' || csvColumn === 'offerType') continue;
+                const jsVariablePath = columnMapping[csvColumn];
+                let valueToSet: string | undefined = undefined;
 
-                    const jsVariablePath = columnMapping[csvColumn];
-                    const valueToSet = row[csvColumn];
+                if (jsVariablePath === 'devDynamicContent.parent[0].custom_offer') {
+                    if (tier === 'T1' && csvColumn === 'custom_offer') {
+                        valueToSet = row['custom_offer'];
+                    } else if (tier === 'T2' && csvColumn === 'offerType') {
+                        valueToSet = row['offerType'];
+                    }
+                } else if (row[csvColumn]) {
+                    valueToSet = row[csvColumn];
+                }
 
+                if (valueToSet !== undefined) {
                     const regex = new RegExp(`(${jsVariablePath.replace(/\[/g, '\\[').replace(/\]/g, '\\]')}\\s*=\\s*['"])([^'"]*)(['"]?)`);
                     if (regex.test(newDynamicJsContent)) {
                         newDynamicJsContent = newDynamicJsContent.replace(regex, `$1${valueToSet}$3`);
                     } else {
                         console.warn(`Could not find "${jsVariablePath}" in Dynamic.js to replace.`);
                     }
-                }
-            }
-
-            // Tier-specific mapping for custom_offer
-            const offerJsVariablePath = 'devDynamicContent.parent[0].custom_offer';
-            let offerValueToSet = '';
-            
-            if (tier === 'T1') {
-                offerValueToSet = row['custom_offer'];
-            } else if (tier === 'T2') {
-                offerValueToSet = row['offerType'];
-            }
-
-            if(offerValueToSet) {
-                 const regex = new RegExp(`(${offerJsVariablePath.replace(/\[/g, '\\[').replace(/\]/g, '\\]')}\\s*=\\s*['"])([^'"]*)(['"]?)`);
-                 if (regex.test(newDynamicJsContent)) {
-                    newDynamicJsContent = newDynamicJsContent.replace(regex, `$1${offerValueToSet}$3`);
-                } else {
-                    console.warn(`Could not find "${offerJsVariablePath}" in Dynamic.js to replace for tier logic.`);
                 }
             }
 
