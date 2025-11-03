@@ -2,7 +2,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import JSZip from "jszip";
 import Papa from "papaparse";
 import { getColumnMapping } from "@/app/actions";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -28,28 +27,31 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-
-type TemplateFiles = { [key: string]: { content: string, type: 'string' | 'binary' } };
+import JSZip from "jszip";
 
 export type CsvData = Record<string, string>[];
 export type ColumnMapping = Record<string, string>;
-export type BannerVariation = { 
-  name: string; 
-  files: Record<string, string | Buffer>; 
-  bannerId?: string; 
-  htmlFile?: string;
-  width?: number;
-  height?: number;
+export type BannerVariation = {
+  name: string;
+  bannerId: string;
+  htmlFile: string;
+  width: number;
+  height: number;
+  files?: Record<string, string | Buffer>; // For download purposes
 };
 
 export function BannerBuildr() {
-  const [templateFiles, setTemplateFiles] = useState<Record<string, string | Buffer> | null>(null);
+  const [templateFile, setTemplateFile] = useState<File | null>(null);
   const [templateFileName, setTemplateFileName] = useState<string>("");
+  
+  const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvData, setCsvData] = useState<CsvData | null>(null);
   const [csvFileName, setCsvFileName] = useState<string>("");
   const [csvColumns, setCsvColumns] = useState<string[]>([]);
+
   const [jsVariables, setJsVariables] = useState<string[]>([]);
   const [columnMapping, setColumnMapping] = useState<ColumnMapping | null>(null);
+  
   const [bannerVariations, setBannerVariations] = useState<BannerVariation[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
@@ -65,6 +67,7 @@ export function BannerBuildr() {
     setIsLoading(true);
     setLoadingMessage("Processing template...");
     setTemplateFileName(file.name);
+    setTemplateFile(file);
 
     try {
       const formData = new FormData();
@@ -85,35 +88,20 @@ export function BannerBuildr() {
       if (!htmlFile) {
         throw new Error("Template must include an index.html file.");
       }
-
-      // Store the content for later use in generation
+      
       setDynamicJsContent(dynamicJsContent || "");
       
-      // Extract JS variables for mapping
-      setJsVariables(['devDynamicContent.parent[0].custom_offer']);
+      const extractedVars = dynamicJsContent?.match(/devDynamicContent\.[a-zA-Z0-9_\[\]\.]+/g) || [];
+      const uniqueVars = [...new Set(extractedVars)];
+      setJsVariables(uniqueVars);
 
-      // Fetch all files for the template to enable download and variation generation
-      const zip = await JSZip.loadAsync(await file.arrayBuffer());
-      const allFiles: Record<string, string | Buffer> = {};
-      for (const filename in zip.files) {
-          const zipEntry = zip.files[filename];
-          if (!zipEntry.dir) {
-              const content = await zipEntry.async('nodebuffer');
-              // The server API now flattens the path, so just use filename
-              allFiles[zipEntry.name.split('/').pop() || filename] = content;
-          }
-      }
-      setTemplateFiles(allFiles);
-
-      // Generate a preview of the original template
-      const originalPreview = {
+      const originalPreview: BannerVariation = {
           name: "Original Template Preview",
-          files: allFiles, 
           bannerId,
           htmlFile,
           width,
           height,
-        };
+      };
 
       setOriginalBanner(originalPreview);
       setBannerVariations([originalPreview]);
@@ -133,9 +121,10 @@ export function BannerBuildr() {
     setIsLoading(true);
     setLoadingMessage("Parsing data file...");
     setCsvFileName(file.name);
-    setBannerVariations(originalBanner ? [originalBanner] : []); // Reset to original preview
-    setColumnMapping(null); // Reset mapping
-    setIsMappingComplete(false); // Reset mapping confirmation
+    setCsvFile(file);
+    setBannerVariations(originalBanner ? [originalBanner] : []);
+    setColumnMapping(null); 
+    setIsMappingComplete(false); 
     
     Papa.parse(file, {
       header: true,
@@ -155,7 +144,7 @@ export function BannerBuildr() {
   };
 
   useEffect(() => {
-    if (dynamicJsContent && csvColumns.length > 0 && !columnMapping) {
+    if (dynamicJsContent && csvColumns.length > 0 && !columnMapping && !isMappingComplete) {
       const runMapping = async () => {
         setIsLoading(true);
         setLoadingMessage("AI is mapping columns...");
@@ -180,60 +169,43 @@ export function BannerBuildr() {
       };
       runMapping();
     }
-  }, [dynamicJsContent, csvColumns, columnMapping]);
+  }, [dynamicJsContent, csvColumns, columnMapping, isMappingComplete]);
 
 
-  const handleGenerateBanners = () => {
-    if (!csvData || !columnMapping || !templateFiles || !originalBanner) {
+  const handleGenerateBanners = async () => {
+    if (!csvFile || !columnMapping || !templateFile || !originalBanner) {
         toast({ title: "Warning", description: "Please complete all previous steps.", variant: "destructive" });
         return;
     };
 
     setIsLoading(true);
-    setLoadingMessage(`Generating ${csvData.length} banners...`);
+    setLoadingMessage(`Generating ${csvData?.length || 0} banners...`);
 
     try {
-      const newVariations: BannerVariation[] = csvData.map((row, index) => {
-        const dynamicJsPath = 'Dynamic.js';
-        let newDynamicJsContent = dynamicJsContent || "";
-        
-        for (const csvColumn in columnMapping) {
-          if (row[csvColumn] && columnMapping[csvColumn]) {
-            const jsVariablePath = columnMapping[csvColumn];
-            const valueToSet = row[csvColumn];
-            
-            if (jsVariablePath === 'devDynamicContent.parent[0].custom_offer') {
-                const regex = /(devDynamicContent\.parent\[0\]\.custom_offer\s*=\s*['"])([^'"]*)(['"]?)/;
-                if (regex.test(newDynamicJsContent)) {
-                  newDynamicJsContent = newDynamicJsContent.replace(regex, `$1${valueToSet}$3`);
-                } else {
-                  console.warn(`Could not find "${jsVariablePath}" in Dynamic.js to replace.`);
-                }
-            }
-          }
-        }
-        
-        const variationName = `Variation_${index + 1}_${
-          row[Object.keys(row)[0]] || "data"
-        }`.replace(/[^a-zA-Z0-9_-]/g, '');
+        const formData = new FormData();
+        formData.append('template', templateFile);
+        formData.append('csv', csvFile);
+        formData.append('columnMapping', JSON.stringify(columnMapping));
+        formData.append('dynamicJsContent', dynamicJsContent || '');
 
-        const newFiles = { ...templateFiles };
-        newFiles[dynamicJsPath] = Buffer.from(newDynamicJsContent, 'utf-8');
-        
-        return {
-          name: variationName,
-          files: newFiles,
-          htmlFile: originalBanner.htmlFile,
-          width: originalBanner.width,
-          height: originalBanner.height,
-        };
-      });
-      // Prepend the original banner to the list of variations for display
-      setBannerVariations([originalBanner, ...newVariations]);
-      toast({ title: "Success", description: `${newVariations.length} banners generated.` });
+        const response = await fetch('/api/generate', {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to generate banners on server.');
+        }
+
+        const newVariations: BannerVariation[] = await response.json();
+      
+        setBannerVariations([originalBanner, ...newVariations]);
+        toast({ title: "Success", description: `${newVariations.length} banners generated.` });
     } catch (e) {
       console.error(e);
-      toast({ title: "Error", description: "Failed to generate banners.", variant: "destructive" });
+      const message = e instanceof Error ? e.message : "Failed to generate banners.";
+      toast({ title: "Error", description: message, variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
@@ -246,29 +218,53 @@ export function BannerBuildr() {
     
     setIsLoading(true);
     setLoadingMessage("Preparing all banners for download...");
-    const zip = new JSZip();
+    
+    try {
+        const zip = new JSZip();
 
-    for (const variation of variationsToDownload) {
-      const folder = zip.folder(variation.name);
-      if(folder){
-        Object.keys(variation.files).forEach(fileName => {
-          folder.file(fileName, variation.files[fileName]);
+        // Use the /api/download/[bannerId] route to fetch the files for each variation
+        const downloadPromises = variationsToDownload.map(async (variation) => {
+            const folder = zip.folder(variation.name);
+            if(folder){
+                try {
+                    const response = await fetch(`/api/download/${variation.bannerId}`);
+                    if (!response.ok) {
+                        console.error(`Failed to fetch files for ${variation.name}`);
+                        return;
+                    }
+                    const filesZip = await JSZip.loadAsync(await response.arrayBuffer());
+                    for (const filename in filesZip.files) {
+                        const fileData = await filesZip.files[filename].async('nodebuffer');
+                        folder.file(filename, fileData);
+                    }
+                } catch (error) {
+                    console.error(`Error downloading variation ${variation.name}:`, error);
+                }
+            }
         });
-      }
+    
+        await Promise.all(downloadPromises);
+
+        const blob = await zip.generateAsync({ type: "blob" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `BannerBuildr_Variations.zip`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+    } catch (error) {
+        console.error("Failed to create master zip:", error);
+        toast({ title: "Error", description: "Could not prepare files for download.", variant: "destructive" });
+    } finally {
+        setIsLoading(false);
     }
-    const blob = await zip.generateAsync({ type: "blob" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `BannerBuildr_Variations.zip`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setIsLoading(false);
   };
   
   const resetState = () => {
-    setTemplateFiles(null);
+    setTemplateFile(null);
     setTemplateFileName("");
+    setCsvFile(null);
     setCsvData(null);
     setCsvFileName("");
     setCsvColumns([]);
@@ -336,7 +332,7 @@ export function BannerBuildr() {
             </Button>
         </div>
       <div className="space-y-4 max-w-4xl mx-auto">
-        {renderStep(1, "Upload Template", "A .zip file with index.html and related assets.", !!templateFiles, 
+        {renderStep(1, "Upload Template", "A .zip file with index.html and related assets.", !!templateFile, 
             <FileUploadZone
             onFileUpload={handleTemplateUpload}
             title="Upload Template"
@@ -355,7 +351,7 @@ export function BannerBuildr() {
             accept=".csv"
             Icon={FileText}
             />,
-            !!templateFiles
+            !!templateFile
         )}
 
         {showMappingCard && (
@@ -421,7 +417,7 @@ export function BannerBuildr() {
         </div>
       )}
 
-      {!templateFiles && !isLoading && (
+      {!templateFile && !isLoading && (
           <Alert className="max-w-4xl mx-auto">
                 <Wand2 className="h-4 w-4" />
                 <AlertTitle className="font-headline">Welcome to BannerBuildr!</AlertTitle>
@@ -434,5 +430,3 @@ export function BannerBuildr() {
     </div>
   );
 }
-
-    
