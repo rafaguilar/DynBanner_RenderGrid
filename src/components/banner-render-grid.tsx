@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import Papa from "papaparse";
 import { getColumnMapping } from "@/app/actions";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -28,8 +28,6 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import JSZip from "jszip";
-import { Label } from "./ui/label";
-import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 
 export type CsvData = Record<string, string>[];
 export type ColumnMapping = Record<string, string>;
@@ -62,7 +60,7 @@ export function BannerRenderGrid() {
   
   const [originalBanner, setOriginalBanner] = useState<BannerVariation | null>(null);
   const [dynamicJsContent, setDynamicJsContent] = useState<string | null>(null);
-  const [tier, setTier] = useState<'T1' | 'T2'>('T1');
+  const [tier, setTier] = useState<'T1' | 'T2' | null>(null);
 
 
 
@@ -87,13 +85,17 @@ export function BannerRenderGrid() {
         throw new Error(errorData.error || 'Failed to upload template.');
       }
       
-      const { bannerId, htmlFile, dynamicJsContent, width, height } = await response.json();
+      const { bannerId, htmlFile, dynamicJsContent, width, height, tier } = await response.json();
 
       if (!htmlFile) {
         throw new Error("Template must include an index.html file.");
       }
       
       setDynamicJsContent(dynamicJsContent || "");
+      setTier(tier);
+      if (tier) {
+         toast({ title: "Tier Detected", description: `Template identified as ${tier}.` });
+      }
       
       const extractedVars = dynamicJsContent?.match(/devDynamicContent\.[a-zA-Z0-9_\[\]\.]+/g) || [];
       const uniqueVars = [...new Set(extractedVars)];
@@ -177,7 +179,7 @@ export function BannerRenderGrid() {
 
 
   const handleGenerateBanners = async () => {
-    if (!csvFile || !columnMapping || !templateFile || !originalBanner) {
+    if (!csvFile || !columnMapping || !templateFile || !originalBanner || !tier) {
         toast({ title: "Warning", description: "Please complete all previous steps.", variant: "destructive" });
         return;
     };
@@ -281,7 +283,7 @@ export function BannerRenderGrid() {
     setIsLoading(false);
     setOriginalBanner(null);
     setDynamicJsContent(null);
-    setTier('T1');
+    setTier(null);
   }
 
   const renderStep = (
@@ -311,7 +313,7 @@ export function BannerRenderGrid() {
             </div>
           </CardHeader>
           {showContent && <CardContent>{content}</CardContent>}
-          {isComplete && templateFileName && title.includes('Template') && <CardContent><p className="text-sm text-muted-foreground flex items-center"><Archive className="w-4 h-4 mr-2"/>{templateFileName}</p></CardContent>}
+          {isComplete && templateFileName && title.includes('Template') && <CardContent><p className="text-sm text-muted-foreground flex items-center"><Archive className="w-4 h-4 mr-2"/>{templateFileName} {tier && `(${tier} Detected)`}</p></CardContent>}
           {isComplete && csvFileName && title.includes('Data') && <CardContent><p className="text-sm text-muted-foreground flex items-center"><List className="w-4 h-4 mr-2"/>{csvFileName} ({csvData?.length} rows)</p></CardContent>}
 
         </Card>
@@ -382,24 +384,12 @@ export function BannerRenderGrid() {
                         <CheckCircle2 className="w-8 h-8 text-green-500" />
                         <div>
                             <CardTitle className="font-headline">Mapping Complete</CardTitle>
-                            <CardDescription>Select a Tier and you are ready to build!</CardDescription>
+                            <CardDescription>All steps are complete. Ready to build!</CardDescription>
                         </div>
                     </div>
                 </CardHeader>
                 <CardContent className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                  <div className="space-y-2">
-                    <Label>Select Tier</Label>
-                    <RadioGroup defaultValue="T1" onValueChange={(value: 'T1' | 'T2') => setTier(value)} className="flex gap-4">
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="T1" id="t1"/>
-                        <Label htmlFor="t1">T1</Label>
-                      </div>
-                       <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="T2" id="t2"/>
-                        <Label htmlFor="t2">T2</Label>
-                      </div>
-                    </RadioGroup>
-                  </div>
+                    <p className="text-sm text-muted-foreground">Ready to generate <strong>{csvData?.length || 0}</strong> unique banner variations.</p>
                     <Button onClick={handleGenerateBanners} disabled={isGenerating || bannersGenerated } size="lg">
                     {isGenerating ? <Loader2 className="mr-2 animate-spin" /> : <Wand2 className="mr-2" />}
                     {bannersGenerated ? "Banners Generated" : "Generate Banners"}

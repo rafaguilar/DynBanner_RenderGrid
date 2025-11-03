@@ -24,6 +24,15 @@ const getAdSize = (htmlContent: string): { width: number, height: number } => {
     return { width: 300, height: 250 }; // Default size
 }
 
+const getTier = (jsContent: string | null): 'T1' | 'T2' | null => {
+    if (!jsContent) return null;
+    const tierMatch = jsContent.match(/devDynamicContent\.parent\[0\]\.TIER\s*=\s*["'](T[12])["']/);
+    if (tierMatch && tierMatch[1]) {
+        return tierMatch[1] as 'T1' | 'T2';
+    }
+    return null;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
@@ -54,14 +63,15 @@ export async function POST(req: NextRequest) {
       const zipEntry = zip.files[filename];
       if (!zipEntry.dir) {
         const content = await zipEntry.async('nodebuffer');
-        const filePath = path.join(tmpDir, path.basename(filename)); // Use basename to flatten structure
+        const cleanFilename = path.basename(filename);
+        const filePath = path.join(tmpDir, cleanFilename);
         await fs.writeFile(filePath, content);
 
-        if (filename.toLowerCase().endsWith('index.html')) {
-          htmlFile = path.basename(filename);
-          htmlContent = await zipEntry.async('string');
-        } else if (filename.toLowerCase().endsWith('dynamic.js')) {
-          dynamicJsContent = await zipEntry.async('string');
+        if (cleanFilename.toLowerCase().endsWith('.html')) {
+          htmlFile = cleanFilename;
+          htmlContent = content.toString('utf-8');
+        } else if (cleanFilename.toLowerCase().endsWith('dynamic.js')) {
+          dynamicJsContent = content.toString('utf-8');
         }
       }
     }
@@ -69,11 +79,9 @@ export async function POST(req: NextRequest) {
     // Fallback if index.html is not found
     if (!htmlFile) {
         for (const filename in zip.files) {
-            if (filename.startsWith('__MACOSX/')) {
-                continue;
-            }
-            if (filename.toLowerCase().endsWith('.html')) {
-                htmlFile = path.basename(filename);
+             const cleanFilename = path.basename(filename);
+            if (!filename.startsWith('__MACOSX/') && cleanFilename.toLowerCase().endsWith('.html') && !zip.files[filename].dir) {
+                htmlFile = cleanFilename;
                 htmlContent = await zip.file(filename)!.async('string');
                 break;
             }
@@ -86,8 +94,9 @@ export async function POST(req: NextRequest) {
     }
 
     const { width, height } = getAdSize(htmlContent);
+    const tier = getTier(dynamicJsContent);
 
-    return NextResponse.json({ bannerId, htmlFile, dynamicJsContent, width, height });
+    return NextResponse.json({ bannerId, htmlFile, dynamicJsContent, width, height, tier });
 
   } catch (error) {
     console.error('Upload error:', error);
