@@ -62,7 +62,9 @@ export const ColumnMappingCard: React.FC<ColumnMappingCardProps> = ({
   
   useEffect(() => {
     // When the initial mapping from AI is available, populate the local mapping state.
-    setMapping(initialMapping);
+    if(initialMapping) {
+      setMapping(initialMapping);
+    }
   }, [initialMapping]);
 
   const handleMappingChange = (csvColumn: string, jsVariable: string) => {
@@ -75,31 +77,54 @@ export const ColumnMappingCard: React.FC<ColumnMappingCardProps> = ({
         // Optionally, show a toast or message to select a tier.
         return;
     }
-    const finalMapping: ColumnMapping = {};
-     for (const key in mapping) {
-        if (Object.prototype.hasOwnProperty.call(mapping, key) && mapping[key]) {
-             finalMapping[key] = mapping[key];
+    
+    // Create the final mapping object to be sent
+    const finalMapping: ColumnMapping = { ...mapping };
+
+    // This is the crucial fix: Ensure that the mapping for both tier-specific
+    // columns is correctly set based on the selected tier, even if one is hidden.
+    const customOfferVar = jsVariables.find(v => v.includes('custom_offer'));
+
+    if(customOfferVar) {
+        if(selectedTier === 'T1') {
+            finalMapping['custom_offer'] = customOfferVar;
+            finalMapping['offerType'] = ''; // Ensure the other tier's mapping is cleared
+        } else { // T2
+            finalMapping['offerType'] = customOfferVar;
+            finalMapping['custom_offer'] = ''; // Ensure the other tier's mapping is cleared
         }
     }
-    onMappingConfirm(finalMapping, selectedTier);
+
+    // Filter out any empty mappings before confirming
+    const cleanedMapping: ColumnMapping = {};
+    for (const key in finalMapping) {
+        if (Object.prototype.hasOwnProperty.call(finalMapping, key) && finalMapping[key]) {
+             cleanedMapping[key] = finalMapping[key];
+        }
+    }
+
+    onMappingConfirm(cleanedMapping, selectedTier);
   };
 
   const visibleCsvColumns = useMemo(() => {
     if (!selectedTier) return [];
 
-    const otherCols = csvColumns.filter(col => col !== 'custom_offer' && col !== 'offerType');
+    // Always show columns that are not tier-specific
+    return csvColumns.filter(col => col !== 'custom_offer' && col !== 'offerType');
     
-    if (selectedTier === "T1" && csvColumns.includes('custom_offer')) {
-        return ['custom_offer', ...otherCols];
-    } else if (selectedTier === "T2" && csvColumns.includes('offerType')) {
-        return ['offerType', ...otherCols];
-    }
-    return otherCols;
   }, [selectedTier, csvColumns]);
+  
+  const tierSpecificColumn = useMemo(() => {
+    if (!selectedTier) return null;
+    return selectedTier === 'T1' ? 'custom_offer' : 'offerType';
+  }, [selectedTier]);
+
 
   if (csvColumns.length === 0) {
     return null; 
   }
+
+  const customOfferVar = jsVariables.find(v => v.includes('custom_offer'));
 
   return (
     <Card>
@@ -117,27 +142,25 @@ export const ColumnMappingCard: React.FC<ColumnMappingCardProps> = ({
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
-        {detectedTier && (
-            <div className="p-4 border rounded-lg bg-background/50 space-y-3">
-            <Label className="font-medium">Select Tier for Generation</Label>
-            <RadioGroup value={selectedTier ?? ""} onValueChange={(value) => setSelectedTier(value as Tier)} className="flex items-center space-x-4">
-                <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="T1" id="t1" />
-                    <Label htmlFor="t1">T1</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="T2" id="t2" />
-                    <Label htmlFor="t2">T2</Label>
-                </div>
-            </RadioGroup>
-            <p className="text-xs text-muted-foreground">Changes which CSV columns are used for generation.</p>
+        <div className="p-4 border rounded-lg bg-background/50 space-y-3">
+        <Label className="font-medium">Select Tier for Generation</Label>
+        <RadioGroup value={selectedTier ?? ""} onValueChange={(value) => setSelectedTier(value as Tier)} className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2">
+                <RadioGroupItem value="T1" id="t1" />
+                <Label htmlFor="t1">T1</Label>
             </div>
-        )}
+            <div className="flex items-center space-x-2">
+                <RadioGroupItem value="T2" id="t2" />
+                <Label htmlFor="t2">T2</Label>
+            </div>
+        </RadioGroup>
+        <p className="text-xs text-muted-foreground">This determines which offer column from your CSV is used.</p>
+        </div>
 
         {(isAiMappingRunning || !selectedTier) ? (
              <div className="flex items-center justify-center gap-2 text-muted-foreground py-10">
                 <Loader2 className="animate-spin" />
-                <span>{isAiMappingRunning ? "AI is mapping columns..." : "Select a Tier to see column mappings..."}</span>
+                <span>{isAiMappingRunning ? "AI is suggesting mappings..." : "Select a Tier to continue..."}</span>
             </div>
         ) : (
             <div className="border rounded-lg overflow-hidden">
@@ -149,6 +172,29 @@ export const ColumnMappingCard: React.FC<ColumnMappingCardProps> = ({
                     </TableRow>
                 </TableHeader>
                 <TableBody>
+                    {/* Tier-specific row shown at the top */}
+                    {tierSpecificColumn && csvColumns.includes(tierSpecificColumn) && customOfferVar && (
+                      <TableRow key={tierSpecificColumn} className="bg-primary/5">
+                        <TableCell className="font-medium">{tierSpecificColumn} <Badge variant="outline" className="ml-2">Auto-mapped</Badge></TableCell>
+                        <TableCell>
+                          <Select
+                              value={customOfferVar}
+                              disabled
+                          >
+                              <SelectTrigger>
+                              <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                  <SelectItem value={customOfferVar}>
+                                  {customOfferVar}
+                                  </SelectItem>
+                              </SelectContent>
+                          </Select>
+                        </TableCell>
+                      </TableRow>
+                    )}
+
+                    {/* Other mappable columns */}
                     {visibleCsvColumns.map((col) => (
                     <TableRow key={col}>
                         <TableCell className="font-medium">{col}</TableCell>

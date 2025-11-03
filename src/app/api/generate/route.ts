@@ -53,6 +53,7 @@ export async function POST(req: NextRequest) {
         const zip = await JSZip.loadAsync(templateBuffer);
         const templateFiles: Record<string, Buffer> = {};
         let htmlFile: string | null = null;
+        let dynamicJsPath: string | null = null;
 
         for (const filename in zip.files) {
              // Skip macOS-specific metadata files
@@ -66,6 +67,9 @@ export async function POST(req: NextRequest) {
                 if (cleanFilename.toLowerCase().endsWith('.html')) {
                     htmlFile = cleanFilename;
                 }
+                if (cleanFilename.toLowerCase().endsWith('dynamic.js')) {
+                    dynamicJsPath = cleanFilename;
+                }
             }
         }
         if(!htmlFile) { // fallback
@@ -76,6 +80,10 @@ export async function POST(req: NextRequest) {
                 }
             }
         }
+        if (!dynamicJsPath) {
+            dynamicJsPath = 'Dynamic.js';
+        }
+
 
         // 3. Generate variations
         const variations = await Promise.all(csvData.map(async (row, index) => {
@@ -90,34 +98,17 @@ export async function POST(req: NextRequest) {
                  console.warn(`Could not find TIER variable in Dynamic.js to replace.`);
             }
 
-            // Tier-specific value for the custom_offer variable
-            const offerValue = tier === 'T1' ? row['custom_offer'] : row['offerType'];
-            
-            if (offerValue !== undefined) {
-                // This regex will match the assignment for custom_offer and replace its value.
-                const offerRegex = new RegExp(`(devDynamicContent\\.parent\\[0\\]\\.custom_offer\\s*=\\s*['"])([^'"]*)(['"]?)`);
-                if (offerRegex.test(newDynamicJsContent)) {
-                    newDynamicJsContent = newDynamicJsContent.replace(offerRegex, `$1${offerValue}$3`);
-                } else {
-                    console.warn(`Could not find "devDynamicContent.parent[0].custom_offer" in Dynamic.js to replace.`);
-                }
-            }
-
-
-            // Standard mapping for all other variables
+            // Simplified and robust variable replacement loop
             for (const csvColumn in columnMapping) {
                 const jsVariablePath = columnMapping[csvColumn];
-
-                // Skip the special tier columns as they are handled above
-                if (csvColumn === 'custom_offer' || csvColumn === 'offerType') {
-                    continue;
-                }
-
                 const valueToSet: string | undefined = row[csvColumn];
 
-                if (valueToSet !== undefined) {
+                if (valueToSet !== undefined && jsVariablePath) {
+                    // This regex is designed to be safe and handle various JS assignment syntaxes.
+                    // It looks for the variable path, an equals sign, and then a quoted string.
                     const regex = new RegExp(`(${jsVariablePath.replace(/\[/g, '\\[').replace(/\]/g, '\\]')}\\s*=\\s*['"])([^'"]*)(['"]?)`);
                     if (regex.test(newDynamicJsContent)) {
+                        // Safely replace the content within the quotes
                         newDynamicJsContent = newDynamicJsContent.replace(regex, `$1${valueToSet}$3`);
                     } else {
                         console.warn(`Could not find "${jsVariablePath}" in Dynamic.js to replace.`);
@@ -130,8 +121,8 @@ export async function POST(req: NextRequest) {
               }`.replace(/[^a-zA-Z0-9_-]/g, '');
 
             const newFiles = { ...templateFiles };
-            const dynamicJsPath = Object.keys(newFiles).find(p => p.toLowerCase().endsWith('dynamic.js')) || 'Dynamic.js';
-            newFiles[dynamicJsPath] = Buffer.from(newDynamicJsContent, 'utf-8');
+            newFiles[dynamicJsPath!] = Buffer.from(newDynamicJsContent, 'utf-8');
+
 
             // 4. Create a new temp dir for this variation and write files
             const bannerId = generateUniqueId();
@@ -158,7 +149,6 @@ export async function POST(req: NextRequest) {
                 }
             }
 
-
             const { width, height } = getAdSize(variationHtmlContent);
 
             return {
@@ -178,3 +168,5 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: `Server error: ${message}` }, { status: 500 });
     }
 }
+
+    

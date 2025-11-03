@@ -169,6 +169,7 @@ export function BannerRenderGrid() {
             toast({ title: "AI Complete", description: "Column mapping suggested. Please review." });
             } else {
             toast({ title: "Manual Mapping Needed", description: "Could not map columns automatically.", variant: 'default' });
+            setColumnMapping({}); 
             }
         } catch (e) {
             console.error("AI mapping failed:", e);
@@ -182,10 +183,10 @@ export function BannerRenderGrid() {
   };
 
   useEffect(() => {
-    if (csvColumns.length > 0 && dynamicJsContent) {
+    if (csvColumns.length > 0 && dynamicJsContent && !columnMapping) {
         runAiMapping();
     }
-  }, [csvColumns, dynamicJsContent]);
+  }, [csvColumns, dynamicJsContent, columnMapping]);
 
 
   const handleGenerateBanners = async () => {
