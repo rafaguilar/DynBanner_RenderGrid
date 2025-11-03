@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Papa from "papaparse";
 import { getColumnMapping } from "@/app/actions";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -159,10 +159,8 @@ export function BannerRenderGrid() {
 
   useEffect(() => {
     // Reset mapping when tier changes, to allow re-running the AI
-    if (columnMapping !== null || isMappingComplete) {
-      setColumnMapping(null);
-      setIsMappingComplete(false);
-    }
+    setColumnMapping(null);
+    setIsMappingComplete(false);
   }, [selectedTier]);
 
   useEffect(() => {
@@ -191,7 +189,7 @@ export function BannerRenderGrid() {
       };
       runMapping();
     }
-  }, [dynamicJsContent, csvColumns, selectedTier, columnMapping, isMappingComplete]);
+  }, [dynamicJsContent, csvColumns, selectedTier, columnMapping, isMappingComplete, toast]);
 
 
   const handleGenerateBanners = async () => {
@@ -316,20 +314,18 @@ export function BannerRenderGrid() {
     setSelectedTier(null);
   }
   
-  const filteredCsvColumns = selectedTier
-    ? csvColumns.filter((col) => {
-        if (selectedTier === "T1") return col === "custom_offer";
-        if (selectedTier === "T2") return col === "offerType";
-        return true; // Show all other columns
-      }).filter(col => col !== 'custom_offer' && col !== 'offerType')
-    : csvColumns;
+  const filteredCsvColumns = useMemo(() => {
+    if (!selectedTier || !csvColumns.length) return [];
     
-    // Add the relevant tier column to the top
+    const otherCols = csvColumns.filter(col => col !== 'custom_offer' && col !== 'offerType');
+    
     if (selectedTier === "T1" && csvColumns.includes('custom_offer')) {
-        filteredCsvColumns.unshift('custom_offer');
+        return ['custom_offer', ...otherCols];
     } else if (selectedTier === "T2" && csvColumns.includes('offerType')) {
-        filteredCsvColumns.unshift('offerType');
+        return ['offerType', ...otherCols];
     }
+    return otherCols;
+  }, [selectedTier, csvColumns]);
 
 
   const renderStep = (
@@ -442,8 +438,7 @@ export function BannerRenderGrid() {
                 jsVariables={jsVariables}
                 initialMapping={columnMapping || {}}
                 onMappingConfirm={(finalMapping) => {
-                    const combinedMapping = { ...columnMapping, ...finalMapping };
-                    setColumnMapping(combinedMapping);
+                    setColumnMapping(finalMapping);
                     setIsMappingComplete(true);
                     toast({ title: "Mapping Confirmed", description: "Ready to generate banners." });
                 }}
@@ -513,3 +508,5 @@ export function BannerRenderGrid() {
     </div>
   );
 }
+
+    

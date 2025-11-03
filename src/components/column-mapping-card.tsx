@@ -43,26 +43,42 @@ export const ColumnMappingCard: React.FC<ColumnMappingCardProps> = ({
   initialMapping,
   onMappingConfirm,
 }) => {
-  const [mapping, setMapping] = useState<ColumnMapping>(initialMapping);
+  const [mapping, setMapping] = useState<ColumnMapping>({});
 
   useEffect(() => {
-    setMapping(initialMapping);
-  }, [initialMapping]);
+    // When the csvColumns to display change (e.g. tier switch),
+    // rebuild the mapping state from the initial AI suggestion,
+    // but only for the columns that are currently relevant.
+    const newMapping: ColumnMapping = {};
+    csvColumns.forEach(col => {
+        if (initialMapping[col]) {
+            newMapping[col] = initialMapping[col];
+        }
+    });
+    setMapping(newMapping);
+  }, [initialMapping, csvColumns]);
 
   const handleMappingChange = (csvColumn: string, jsVariable: string) => {
-    // Treat the special 'none' value as an empty string for the mapping logic
     const valueToSet = jsVariable === "none" ? "" : jsVariable;
     setMapping((prev) => ({ ...prev, [csvColumn]: valueToSet }));
   };
   
   const handleConfirm = () => {
+    // When confirming, pass up only the mappings for the currently visible columns.
     const finalMapping: ColumnMapping = {};
-    for (const key in mapping) {
-        // Ensure we don't pass the 'none' value up
-        if (mapping[key] && mapping[key] !== 'none') {
-            finalMapping[key] = mapping[key];
+     for (const key in mapping) {
+        if (Object.prototype.hasOwnProperty.call(mapping, key) && mapping[key]) {
+             finalMapping[key] = mapping[key];
         }
     }
+    // Also include mappings from the initial AI suggestion that might not be in the current view
+    // but are still relevant (e.g. other non-tier-specific columns)
+    for (const key in initialMapping) {
+        if(!finalMapping[key]) {
+            finalMapping[key] = initialMapping[key];
+        }
+    }
+
     onMappingConfirm(finalMapping);
   };
 
@@ -133,3 +149,5 @@ export const ColumnMappingCard: React.FC<ColumnMappingCardProps> = ({
     </Card>
   );
 };
+
+    
