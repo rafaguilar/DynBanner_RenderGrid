@@ -98,6 +98,8 @@ export function BannerBuildr() {
     setIsLoading(true);
     setLoadingMessage("Parsing data file...");
     setCsvFileName(file.name);
+    setColumnMapping(null); // Reset mapping when new data is uploaded
+    setIsMappingComplete(false);
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
@@ -118,7 +120,7 @@ export function BannerBuildr() {
   useEffect(() => {
     const dynamicJsContent = templateFiles ? templateFiles['Dynamic.js'] : null;
 
-    if (dynamicJsContent && csvColumns.length > 0 && !columnMapping) {
+    if (dynamicJsContent && csvColumns.length > 0 && !columnMapping && !isMappingComplete) {
       const runMapping = async () => {
         setIsLoading(true);
         setLoadingMessage("AI is mapping columns...");
@@ -139,7 +141,7 @@ export function BannerBuildr() {
       };
       runMapping();
     }
-  }, [templateFiles, csvColumns, columnMapping]);
+  }, [templateFiles, csvColumns, columnMapping, isMappingComplete]);
 
   const handleGenerateBanners = () => {
     if (!csvData || !columnMapping || !templateFiles) {
@@ -367,6 +369,5 @@ export function BannerBuildr() {
 
     </div>
   );
-}
 
     
