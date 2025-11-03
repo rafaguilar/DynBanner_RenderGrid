@@ -90,7 +90,7 @@ export const ColumnMappingCard: React.FC<ColumnMappingCardProps> = ({
                         <SelectItem value="">
                             <em>None</em>
                         </SelectItem>
-                        {jsVariables.map((variable) => (
+                        {jsVariables && jsVariables.length > 0 && jsVariables.map((variable) => (
                             <SelectItem key={variable} value={variable}>
                             {variable}
                             </SelectItem>
