@@ -32,7 +32,14 @@ import { useToast } from "@/hooks/use-toast";
 type TemplateFiles = { [key: string]: string };
 export type CsvData = Record<string, string>[];
 export type ColumnMapping = Record<string, string>;
-export type BannerVariation = { name: string; files: TemplateFiles; bannerId?: string; htmlFile?: string; };
+export type BannerVariation = { 
+  name: string; 
+  files: TemplateFiles; 
+  bannerId?: string; 
+  htmlFile?: string;
+  width?: number;
+  height?: number;
+};
 
 export function BannerBuildr() {
   const [templateFiles, setTemplateFiles] = useState<TemplateFiles | null>(null);
@@ -68,7 +75,7 @@ export function BannerBuildr() {
         throw new Error(errorData.error || 'Failed to upload template.');
       }
       
-      const { bannerId, htmlFile, dynamicJsContent } = await response.json();
+      const { bannerId, htmlFile, dynamicJsContent, width, height } = await response.json();
 
       if (!htmlFile) {
         throw new Error("Template must include an index.html file.");
@@ -84,6 +91,8 @@ export function BannerBuildr() {
           files: {}, // Files are on server, not needed on client
           bannerId,
           htmlFile,
+          width,
+          height,
         },
       ]);
       
@@ -153,7 +162,7 @@ export function BannerBuildr() {
       };
       runMapping();
     }
-  }, [templateFiles, csvColumns, columnMapping, isMappingComplete]);
+  }, [templateFiles, csvColumns, isMappingComplete, columnMapping]);
 
   const handleGenerateBanners = () => {
     if (!csvData || !columnMapping || !templateFiles) {
@@ -165,6 +174,7 @@ export function BannerBuildr() {
     setLoadingMessage(`Generating ${csvData.length} banners...`);
 
     try {
+      const originalBanner = bannerVariations[0] || {};
       const newVariations: BannerVariation[] = csvData.map((row, index) => {
         const dynamicJsPath = 'Dynamic.js';
         let newDynamicJsContent = templateFiles[dynamicJsPath] || "";
@@ -196,6 +206,8 @@ export function BannerBuildr() {
         return {
           name: variationName,
           files: newFiles,
+          width: originalBanner.width,
+          height: originalBanner.height,
         };
       });
       setBannerVariations(newVariations);

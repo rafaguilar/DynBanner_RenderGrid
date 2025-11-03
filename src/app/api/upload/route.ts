@@ -16,6 +16,15 @@ export const config = {
 // Helper to generate a unique ID
 const generateUniqueId = () => `banner-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
+// Helper to get ad size from HTML content
+const getAdSize = (htmlContent: string): { width: number, height: number } => {
+    const sizeMatch = htmlContent.match(/<meta\s+name=["']ad.size["']\s+content=["']width=(\d+),height=(\d+)["']/);
+    if (sizeMatch && sizeMatch[1] && sizeMatch[2]) {
+        return { width: parseInt(sizeMatch[1], 10), height: parseInt(sizeMatch[2], 10) };
+    }
+    return { width: 300, height: 250 }; // Default size
+}
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
@@ -35,6 +44,7 @@ export async function POST(req: NextRequest) {
     
     let htmlFile: string | null = null;
     let dynamicJsContent: string | null = null;
+    let htmlContent: string | null = null;
 
     for (const filename in zip.files) {
       const zipEntry = zip.files[filename];
@@ -45,6 +55,7 @@ export async function POST(req: NextRequest) {
 
         if (filename.toLowerCase().endsWith('index.html')) {
           htmlFile = path.basename(filename);
+          htmlContent = await zipEntry.async('string');
         } else if (filename.toLowerCase().endsWith('dynamic.js')) {
           dynamicJsContent = await zipEntry.async('string');
         }
@@ -56,17 +67,20 @@ export async function POST(req: NextRequest) {
         for (const filename in zip.files) {
             if (filename.toLowerCase().endsWith('.html')) {
                 htmlFile = path.basename(filename);
+                htmlContent = await zip.file(filename)!.async('string');
                 break;
             }
         }
     }
 
-    if (!htmlFile) {
+    if (!htmlFile || !htmlContent) {
       await fs.rm(tmpDir, { recursive: true, force: true });
       return NextResponse.json({ error: 'No HTML file found in the zip archive.' }, { status: 400 });
     }
 
-    return NextResponse.json({ bannerId, htmlFile, dynamicJsContent });
+    const { width, height } = getAdSize(htmlContent);
+
+    return NextResponse.json({ bannerId, htmlFile, dynamicJsContent, width, height });
 
   } catch (error) {
     console.error('Upload error:', error);
