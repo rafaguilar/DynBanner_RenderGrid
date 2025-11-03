@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -45,6 +45,10 @@ export const ColumnMappingCard: React.FC<ColumnMappingCardProps> = ({
 }) => {
   const [mapping, setMapping] = useState<ColumnMapping>(initialMapping);
 
+  useEffect(() => {
+    setMapping(initialMapping);
+  }, [initialMapping]);
+
   const handleMappingChange = (csvColumn: string, jsVariable: string) => {
     // Treat the special 'none' value as an empty string for the mapping logic
     const valueToSet = jsVariable === "none" ? "" : jsVariable;
@@ -61,6 +65,10 @@ export const ColumnMappingCard: React.FC<ColumnMappingCardProps> = ({
     }
     onMappingConfirm(finalMapping);
   };
+
+  if (csvColumns.length === 0) {
+    return null; 
+  }
 
   return (
     <Card>

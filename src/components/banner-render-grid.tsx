@@ -186,7 +186,12 @@ export function BannerRenderGrid() {
     };
 
     setIsLoading(true);
-    setLoadingMessage(`Generating ${csvData?.length || 0} banners...`);
+
+    // Filter CSV data to count effective rows
+    const tierColumn = tier === 'T1' ? 'custom_offer' : 'offerType';
+    const effectiveCsvData = csvData?.filter(row => row[tierColumn] && row[tierColumn].trim() !== '') || [];
+
+    setLoadingMessage(`Generating ${effectiveCsvData.length} banners...`);
 
     try {
         const formData = new FormData();
@@ -287,13 +292,23 @@ export function BannerRenderGrid() {
     setTier(null);
   }
   
-    const filteredCsvColumns = tier
+  const filteredCsvColumns = tier
     ? csvColumns.filter((col) => {
         if (tier === "T1") return col === "custom_offer";
         if (tier === "T2") return col === "offerType";
-        return true;
+        // If tier is somehow not T1 or T2, show nothing for tier-specific fields
+        return col !== "custom_offer" && col !== "offerType";
       })
-    : [];
+    : csvColumns;
+
+  const allRelevantJsVariables = tier
+    ? jsVariables.filter(
+        (v) =>
+          !v.includes("custom_offer") ||
+          (tier === "T1" && v.includes("custom_offer")) ||
+          (tier === "T2" && v.includes("custom_offer"))
+      )
+    : jsVariables;
 
 
   const renderStep = (
@@ -339,6 +354,10 @@ export function BannerRenderGrid() {
   
   const bannersGenerated = bannerVariations.length > 1;
   const showMappingCard = csvData && dynamicJsContent && !isMappingComplete && jsVariables.length > 0;
+  
+  const tierColumn = tier === 'T1' ? 'custom_offer' : 'offerType';
+  const effectiveCsvData = csvData?.filter(row => row[tierColumn] && row[tierColumn].trim() !== '') || [];
+  
   const showGenerateCard = isMappingComplete;
   const isGenerating = isLoading && loadingMessage.includes('Generating');
 
@@ -383,10 +402,12 @@ export function BannerRenderGrid() {
         {showMappingCard && (
             <ColumnMappingCard
                 csvColumns={filteredCsvColumns}
-                jsVariables={jsVariables}
+                jsVariables={allRelevantJsVariables}
                 initialMapping={columnMapping || {}}
                 onMappingConfirm={(finalMapping) => {
-                    setColumnMapping(finalMapping);
+                    // Combine with existing mappings for other variables
+                    const combinedMapping = { ...columnMapping, ...finalMapping };
+                    setColumnMapping(combinedMapping);
                     setIsMappingComplete(true);
                     toast({ title: "Mapping Confirmed", description: "Ready to generate banners." });
                 }}
@@ -406,7 +427,7 @@ export function BannerRenderGrid() {
                     </div>
                 </CardHeader>
                 <CardContent className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                    <p className="text-sm text-muted-foreground">Ready to generate <strong>{csvData?.length || 0}</strong> unique banner variations.</p>
+                    <p className="text-sm text-muted-foreground">Ready to generate <strong>{effectiveCsvData.length || 0}</strong> unique banner variations.</p>
                     <Button onClick={handleGenerateBanners} disabled={isGenerating || bannersGenerated } size="lg">
                     {isGenerating ? <Loader2 className="mr-2 animate-spin" /> : <Wand2 className="mr-2" />}
                     {bannersGenerated ? "Banners Generated" : "Generate Banners"}

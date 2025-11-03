@@ -38,7 +38,15 @@ export async function POST(req: NextRequest) {
         // 1. Read CSV data
         const csvFileContent = await csvFile.text();
         const parseResult = Papa.parse(csvFileContent, { header: true, skipEmptyLines: true });
-        const csvData = parseResult.data as Record<string, string>[];
+        let csvData = parseResult.data as Record<string, string>[];
+
+        // Filter CSV data based on the tier
+        const tierColumn = tier === 'T1' ? 'custom_offer' : 'offerType';
+        csvData = csvData.filter(row => row[tierColumn] && row[tierColumn].trim() !== '');
+
+        if (csvData.length === 0) {
+            return NextResponse.json({ error: `No rows found with data in the required column '${tierColumn}' for Tier ${tier}.` }, { status: 400 });
+        }
         
         // 2. Unpack original template to read files
         const templateBuffer = Buffer.from(await templateFile.arrayBuffer());
