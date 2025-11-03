@@ -61,38 +61,28 @@ export function BannerBuildr() {
         const fileData = zip.files[filename];
         if (!fileData.dir) {
           const content = await fileData.async("string");
-          const cleanFilename = filename.split('/').pop() || filename;
-          files[cleanFilename] = content;
-          if (cleanFilename.endsWith("Dynamic.js")) {
+          files[filename] = content; // Keep full path for now
+          if (filename.endsWith("Dynamic.js")) {
             dynamicJsContent = content;
           }
         }
       });
       await Promise.all(filePromises);
   
-      if (!dynamicJsContent) {
-          const jsPath = Object.keys(files).find(path => path.endsWith('Dynamic.js'));
-          if(jsPath) {
-            dynamicJsContent = files[jsPath];
-          }
-      }
-      
       const hasIndexHtml = Object.keys(files).some(path => path.endsWith('index.html'));
-
+  
       if (!hasIndexHtml || !dynamicJsContent) {
         throw new Error("Template must include index.html and Dynamic.js");
       }
   
       setTemplateFiles(files);
       if (dynamicJsContent) {
-        const variableRegex = /((devDynamicContent|dynamicData)[\w.$[\]]+)/g;
+        // More specific regex to find the exact variable path
+        const variableRegex = /devDynamicContent\.parent\[0\]\.custom_offer/g;
         const matches = dynamicJsContent.match(variableRegex) || [];
-        const extractedVariables = matches.map(v => v.trim().replace(/['"`=:]/g, ''))
-            .filter(v => v && (v.startsWith('dynamicData.') || v.startsWith('devDynamicContent.')));
-
-        const uniqueVariables = [...new Set(extractedVariables)]
-          .map(v => v.endsWith('.') ? v.slice(0, -1) : v) // Remove trailing dots
-          .filter(v => v && v.trim() !== '' && v.includes('.')); // Ensure it's not empty and is a nested property
+        
+        // No need to clean up as regex is specific
+        const uniqueVariables = [...new Set(matches)];
         
         setJsVariables(uniqueVariables);
       }
@@ -173,23 +163,10 @@ export function BannerBuildr() {
             const jsVariablePath = columnMapping[csvColumn];
             const valueToSet = row[csvColumn];
             
-            // Escape special characters for regex, including dots and brackets
-            const escapedVarPath = jsVariablePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-            
-            // Regex to find variable assignment: varName = "value"; or varName: "value",
-            const regex = new RegExp(`(${escapedVarPath}\\s*[:=]\\s*['"])([^'"]*)(['"]?)`);
-
-            let found = false;
-            newDynamicJsContent = newDynamicJsContent.replace(regex, (match, p1, p2, p3) => {
-              found = true;
-              // Ensure value is wrapped in quotes
-              return `${p1}${valueToSet}${p3 || "'"}`;
-            });
-
-            // Fallback for simple assignment without quotes if regex fails
-            if (!found) {
-               const simpleAssignmentRegex = new RegExp(`(${escapedVarPath}\\s*=\\s*)[^;]*;`);
-               newDynamicJsContent = newDynamicJsContent.replace(simpleAssignmentRegex, `$1'${valueToSet}';`);
+            // This is now highly specific to your use case
+            if (jsVariablePath === 'devDynamicContent.parent[0].custom_offer') {
+                const regex = /(devDynamicContent\.parent\[0\]\.custom_offer\s*=\s*['"])([^'"]*)(['"]?)/;
+                newDynamicJsContent = newDynamicJsContent.replace(regex, `$1${valueToSet}$3`);
             }
           }
         }
@@ -225,7 +202,6 @@ export function BannerBuildr() {
       const folder = zip.folder(variation.name);
       if(folder){
         for (const fileName in variation.files) {
-            // Get base name of the file
             const baseName = fileName.split('/').pop() || fileName;
             folder.file(baseName, variation.files[fileName]);
         }
