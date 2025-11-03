@@ -1,6 +1,5 @@
 
 import { NextRequest, NextResponse } from 'next/server';
-import formidable from 'formidable';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
@@ -17,36 +16,30 @@ const getAdSize = (htmlContent: string): { width: number, height: number } => {
     return { width: 300, height: 250 };
 }
 
-const parseForm = (req: NextRequest): Promise<{ fields: formidable.Fields; files: formidable.Files }> => {
-    return new Promise((resolve, reject) => {
-        const form = formidable({});
-        form.parse(req as any, (err, fields, files) => {
-            if (err) reject(err);
-            else resolve({ fields, files });
-        });
-    });
-};
 
 export async function POST(req: NextRequest) {
     try {
-        const { fields, files } = await parseForm(req);
+        const formData = await req.formData();
         
-        const templateFile = files.template?.[0];
-        const csvFile = files.csv?.[0];
-        const columnMapping = JSON.parse(fields.columnMapping?.[0] || '{}');
-        const dynamicJsContent = fields.dynamicJsContent?.[0] || '';
+        const templateFile = formData.get('template') as File | null;
+        const csvFile = formData.get('csv') as File | null;
+        const columnMappingJSON = formData.get('columnMapping') as string | null;
+        const dynamicJsContent = formData.get('dynamicJsContent') as string | null;
 
-        if (!templateFile || !csvFile) {
-            return NextResponse.json({ error: 'Missing template or csv file' }, { status: 400 });
+        if (!templateFile || !csvFile || !columnMappingJSON || dynamicJsContent === null) {
+            return NextResponse.json({ error: 'Missing required form data' }, { status: 400 });
         }
+        
+        const columnMapping = JSON.parse(columnMappingJSON);
+
 
         // 1. Read CSV data
-        const csvFileContent = await fs.readFile(csvFile.filepath, 'utf-8');
+        const csvFileContent = await csvFile.text();
         const parseResult = Papa.parse(csvFileContent, { header: true, skipEmptyLines: true });
         const csvData = parseResult.data as Record<string, string>[];
         
         // 2. Unpack original template to read files
-        const templateBuffer = await fs.readFile(templateFile.filepath);
+        const templateBuffer = Buffer.from(await templateFile.arrayBuffer());
         const zip = await JSZip.loadAsync(templateBuffer);
         const templateFiles: Record<string, Buffer> = {};
         let htmlFile: string | null = null;
