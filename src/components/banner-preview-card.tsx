@@ -6,7 +6,6 @@ import JSZip from "jszip";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
@@ -18,76 +17,28 @@ import type { BannerVariation } from "./banner-buildr";
 export const BannerPreviewCard: React.FC<BannerVariation> = ({
   name,
   files,
+  bannerId,
+  htmlFile,
 }) => {
-  const [srcDoc, setSrcDoc] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Memoize the files object to prevent re-renders unless it changes
-  const memoizedFiles = useMemo(() => files, [files]);
+  const previewUrl = useMemo(() => {
+    if (bannerId && htmlFile) {
+      return `/api/preview/${bannerId}/${htmlFile}`;
+    }
+    return "";
+  }, [bannerId, htmlFile]);
 
-  useEffect(() => {
-    setIsLoading(true);
-    let blobUrls: string[] = [];
-
-    const generateSrcDoc = async () => {
-      // Find index.html case-insensitively
-      const indexHtmlPath = Object.keys(memoizedFiles).find(p => p.toLowerCase() === 'index.html');
-
-      if (!indexHtmlPath) {
-        setSrcDoc("<html><body>Error: index.html not found in template.</body></html>");
-        setIsLoading(false);
-        return;
-      }
-      
-      let finalHtml = memoizedFiles[indexHtmlPath];
-      
-      const fileProcessingPromises = Object.keys(memoizedFiles).map(async path => {
-        const fileContent = memoizedFiles[path];
-        const lowerCasePath = path.toLowerCase();
-        const isJS = lowerCasePath.endsWith('.js');
-        const isCSS = lowerCasePath.endsWith('.css');
-        const isSVG = lowerCasePath.endsWith('.svg');
-        const isJPG = lowerCasePath.endsWith('.jpg') || lowerCasePath.endsWith('.jpeg');
-        const isPNG = lowerCasePath.endsWith('.png');
-        const isGIF = lowerCasePath.endsWith('.gif');
-        const isImage = isJPG || isPNG || isGIF || isSVG;
-
-        if (isJS || isCSS || isImage) {
-          let mimeType = 'application/octet-stream';
-          if (isJS) mimeType = 'application/javascript';
-          else if (isCSS) mimeType = 'text/css';
-          else if (isSVG) mimeType = 'image/svg+xml';
-          else if (isJPG) mimeType = 'image/jpeg';
-          else if (isPNG) mimeType = 'image/png';
-          else if (isGIF) mimeType = 'image/gif';
-          
-          // JSZip provides content as a string. For binary files like images, this can be an issue.
-          // Assuming JSZip provides a base64 string for images if they were added that way, or we get raw text.
-          // For now, creating blob from the provided content. This works for text-based assets.
-          // For binary assets, we might need to adjust how zip is read if issues persist.
-           const blob = new Blob([fileContent], { type: mimeType });
-           const url = URL.createObjectURL(blob);
-          blobUrls.push(url);
-
-          // Regex to replace relative paths (./, / or just the filename)
-          const pathRegex = new RegExp(`(src|href)=["'](./)?${path.replace('.', '\\.')}["']`, 'g');
-          finalHtml = finalHtml.replace(pathRegex, `$1="${url}"`);
-        }
-      });
-
-      await Promise.all(fileProcessingPromises);
-      setSrcDoc(finalHtml);
-      setIsLoading(false);
-    };
-
-    generateSrcDoc();
-
-    return () => {
-      blobUrls.forEach(url => URL.revokeObjectURL(url));
-    };
-  }, [memoizedFiles]);
 
   const handleDownload = async () => {
+    // This part of the download logic will need to be adjusted
+    // if the files are generated on the server.
+    // For now, we assume `files` prop is populated for download.
+    if (!Object.keys(files).length) {
+      console.warn("No files available for download on the client.");
+      // Potentially fetch from server if needed
+      return;
+    }
     const zip = new JSZip();
     for (const fileName in files) {
        zip.file(fileName, files[fileName]);
@@ -112,19 +63,23 @@ export const BannerPreviewCard: React.FC<BannerVariation> = ({
              <div className="w-full h-full flex items-center justify-center text-muted-foreground">
                 Loading Preview...
              </div>
-          ) : (
+          ) : previewUrl ? (
             <iframe
-              srcDoc={srcDoc}
+              src={previewUrl}
               title={name}
               sandbox="allow-scripts allow-same-origin"
               className="w-full h-full"
               loading="lazy"
             />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                Preview not available.
+            </div>
           )}
         </div>
       </CardContent>
       <CardFooter>
-        <Button onClick={handleDownload} className="w-full" variant="secondary">
+        <Button onClick={handleDownload} className="w-full" variant="secondary" disabled={!Object.keys(files).length}>
           <Download className="mr-2" />
           Download ZIP
         </Button>

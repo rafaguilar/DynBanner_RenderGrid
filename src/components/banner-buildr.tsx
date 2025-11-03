@@ -32,7 +32,7 @@ import { useToast } from "@/hooks/use-toast";
 type TemplateFiles = { [key: string]: string };
 export type CsvData = Record<string, string>[];
 export type ColumnMapping = Record<string, string>;
-export type BannerVariation = { name: string; files: TemplateFiles };
+export type BannerVariation = { name: string; files: TemplateFiles; bannerId?: string; htmlFile?: string; };
 
 export function BannerBuildr() {
   const [templateFiles, setTemplateFiles] = useState<TemplateFiles | null>(null);
@@ -49,51 +49,41 @@ export function BannerBuildr() {
   const { toast } = useToast();
 
   const handleTemplateUpload = async (file: File) => {
-    // Reset relevant state for a new upload
     resetState();
     setIsLoading(true);
     setLoadingMessage("Processing template...");
     setTemplateFileName(file.name);
-    try {
-      const zip = await JSZip.loadAsync(file);
-      const files: TemplateFiles = {};
-      let dynamicJsContent: string | null = null;
-      let hasIndexHtml = false;
-  
-      const filePromises = Object.keys(zip.files).map(async (filename) => {
-        const fileData = zip.files[filename];
-        if (!fileData.dir) {
-          // Normalize filename, removing folder paths
-          const normalizedFilename = filename.split('/').pop() || filename;
-          const content = await fileData.async("string");
-          files[normalizedFilename] = content;
 
-          if (normalizedFilename.toLowerCase() === "dynamic.js") {
-            dynamicJsContent = content;
-          }
-          if (normalizedFilename.toLowerCase() === "index.html") {
-            hasIndexHtml = true;
-          }
-        }
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
       });
-      await Promise.all(filePromises);
-  
-      if (!hasIndexHtml) {
-        throw new Error("Template must include an index.html file.");
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to upload template.');
       }
       
-      if (!dynamicJsContent) {
-          console.warn("No Dynamic.js file found in the template. Some features may not work.");
+      const { bannerId, htmlFile, dynamicJsContent } = await response.json();
+
+      if (!htmlFile) {
+        throw new Error("Template must include an index.html file.");
       }
-  
-      setTemplateFiles(files);
+
+      setTemplateFiles({ "Dynamic.js": dynamicJsContent || "" });
       setJsVariables(['devDynamicContent.parent[0].custom_offer']);
 
       // Generate a preview of the original template
       setBannerVariations([
         {
           name: "Original Template Preview",
-          files: files,
+          files: {}, // Files are on server, not needed on client
+          bannerId,
+          htmlFile,
         },
       ]);
       
@@ -163,7 +153,7 @@ export function BannerBuildr() {
       };
       runMapping();
     }
-  }, [templateFiles, csvColumns, isMappingComplete]);
+  }, [templateFiles, csvColumns, columnMapping, isMappingComplete]);
 
   const handleGenerateBanners = () => {
     if (!csvData || !columnMapping || !templateFiles) {
@@ -289,7 +279,7 @@ export function BannerBuildr() {
       )
   };
 
-  const showMappingCard = csvData && columnMapping && !isMappingComplete && jsVariables.length > 0;
+  const showMappingCard = csvData && templateFiles && !isMappingComplete && jsVariables.length > 0;
   const showGenerateCard = isMappingComplete;
   const isGenerating = isLoading && loadingMessage.includes('Generating');
 
@@ -335,7 +325,7 @@ export function BannerBuildr() {
             <ColumnMappingCard
                 csvColumns={csvColumns}
                 jsVariables={jsVariables}
-                initialMapping={columnMapping}
+                initialMapping={columnMapping || {}}
                 onMappingConfirm={(finalMapping) => {
                     setColumnMapping(finalMapping);
                     setIsMappingComplete(true);
@@ -407,5 +397,3 @@ export function BannerBuildr() {
     </div>
   );
 }
-
-    
