@@ -13,6 +13,7 @@ export async function getColumnMapping(
     return mapping;
   } catch (error) {
     console.error("Error getting column mapping from AI:", error);
-    throw new Error("Failed to get column mapping from AI.");
+    // Return an empty object on failure to allow manual mapping
+    return {};
   }
 }
