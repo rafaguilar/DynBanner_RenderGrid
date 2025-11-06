@@ -73,10 +73,16 @@ export async function POST(req: NextRequest) {
         for (const [objPath, dataRow] of Object.entries(combinedData)) {
             for (const key in dataRow) {
                  const value = dataRow[key];
-                 // Regex to find and replace devDynamicContent.objPath.key = "value";
-                 const regex = new RegExp(`(devDynamicContent\\.${objPath.replace(/\[/g, '\\[').replace(/\]/g, '\\]')}\\.${key}\\s*=\\s*['"])([^'"]*)(['"])`);
+                 if (value === undefined) continue;
+
+                 // Regex to find devDynamicContent.objPath.key = "any value" or 'any value' or an empty string "" or '';
+                 const regex = new RegExp(`(devDynamicContent\\.${objPath.replace(/\[/g, '\\[').replace(/\]/g, '\\]')}\\.${key}\\s*=\\s*)((['"])(?:[^'"]*|\\')*\\3|(['"])(?:[^"]*|\\")*\\4)`);
+
+                 const stringValue = String(value).replace(/'/g, "\\'");
+
                  if (regex.test(newDynamicJsContent)) {
-                    newDynamicJsContent = newDynamicJsContent.replace(regex, `$1${String(value).replace(/'/g, "\\'")}$3`);
+                    // Replace the value, keeping the original quotes
+                    newDynamicJsContent = newDynamicJsContent.replace(regex, `$1'${stringValue}'`);
                  }
             }
         }
