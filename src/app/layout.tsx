@@ -1,9 +1,10 @@
+
 import type {Metadata} from 'next';
 import { Toaster } from "@/components/ui/toaster"
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Banner RenderGrid',
+  title: 'Dyn Banner RenderGrid',
   description: 'Generate banner variations from templates and data.',
 };
 

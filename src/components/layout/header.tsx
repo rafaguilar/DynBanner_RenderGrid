@@ -1,3 +1,4 @@
+
 import { Rocket } from 'lucide-react';
 import type { FC } from 'react';
 
@@ -12,7 +13,7 @@ export const Header: FC = () => {
                 <Rocket className="w-6 h-6" />
               </div>
               <h1 className="text-2xl font-bold font-headline text-foreground">
-                Banner RenderGrid
+                Dyn Banner RenderGrid
               </h1>
             </a>
           </div>
