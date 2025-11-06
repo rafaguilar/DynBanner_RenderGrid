@@ -68,30 +68,37 @@ export async function POST(req: NextRequest) {
             'creative_data[0]': creativeData,
             'OMS[0]': omsData,
         };
+        
+        // Force set the TIER first
+        const tierRegex = new RegExp(`(devDynamicContent\\.parent\\[0\\]\\.TIER\\s*=\\s*['"])([^'"]*)(['"]?)`);
+        if (tierRegex.test(newDynamicJsContent)) {
+             newDynamicJsContent = newDynamicJsContent.replace(tierRegex, `$1${tier}$3`);
+        }
 
-        const lines = newDynamicJsContent.split('\n');
 
-        // Replace placeholders in Dynamic.js using a line-by-line replacement
+        // Robustly replace variable values
         for (const [objPath, dataRow] of Object.entries(combinedData)) {
             for (const key in dataRow) {
                  const value = dataRow[key];
                  if (value === undefined || value === null) continue;
-
+                 
                  const fullVariablePath = `devDynamicContent.${objPath}.${key}`;
                  
-                 for (let i = 0; i < lines.length; i++) {
-                     if (lines[i].includes(fullVariablePath)) {
-                         // Escape backslashes and single quotes in the value
-                         const escapedValue = String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                         // Reconstruct the line with the new value, ensuring it's quoted
-                         lines[i] = `${fullVariablePath} = '${escapedValue}';`;
-                         break; 
-                     }
+                 // Escape special characters in the variable path for use in the regex
+                 const escapedVarPath = fullVariablePath.replace(/\[/g, '\\[').replace(/\]/g, '\\]').replace(/\./g, '\\.');
+
+                 // Regex to find the variable assignment and replace its value
+                 // It handles single quotes, double quotes, or no quotes for the original value
+                 const regex = new RegExp(`(${escapedVarPath}\\s*=\\s*)(?:['"]?)(.*?)(?:['"]?)(;.*|$)`, 'm');
+
+                 if (regex.test(newDynamicJsContent)) {
+                     const escapedValue = String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                     newDynamicJsContent = newDynamicJsContent.replace(regex, `$1'${escapedValue}'$3`);
+                 } else {
+                     console.warn(`Could not find "${fullVariablePath}" in Dynamic.js to perform replacement.`);
                  }
             }
         }
-        
-        newDynamicJsContent = lines.join('\n');
         
         // 3. Create a new temp dir for this variation and write files
         const bannerId = generateUniqueId();
