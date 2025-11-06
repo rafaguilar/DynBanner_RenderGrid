@@ -12,7 +12,7 @@ import {
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Wand2, Loader2, Database, RefreshCw, Sheet, Archive, Download } from 'lucide-react';
+import { Wand2, Loader2, Database, RefreshCw, Sheet, Archive, Download, Folder } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   Select,
@@ -34,6 +34,7 @@ type SheetData = Record<string, Record<string, any[]>>; // { sheetUrl -> { tabNa
 export function DynBannerBuilder() {
   const [parentSheetUrl, setParentSheetUrl] = useState('https://docs.google.com/spreadsheets/d/1y86awcRSK_1MEdJ65HxhXqQQ0KPRYHhqtD_w4-Y_n3s/edit?usp=sharing');
   const [omsSheetUrl, setOmsSheetUrl] = useState('https://docs.google.com/spreadsheets/d/1Wrg3KaCZ0XdwZ8BIScji8anjhIqr7ZAHUIQb0Qswf3g/edit?usp=sharing');
+  const [baseFolderPath, setBaseFolderPath] = useState('https://s0.2mdn.net/creatives/assets/5530354/');
 
   const [sheetData, setSheetData] = useState<SheetData>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -149,6 +150,7 @@ export function DynBannerBuilder() {
         formData.append('template', templateFile);
         formData.append('dynamicJsContent', dynamicJsContent);
         formData.append('tier', selectedTier);
+        formData.append('baseFolderPath', baseFolderPath);
         
         // Parent Data
         formData.append('parentData', JSON.stringify(sheetData[parentSheetUrl]?.[parentTab]?.[parentRow - 1] || {}));
@@ -259,6 +261,13 @@ export function DynBannerBuilder() {
                     <Database className="text-muted-foreground" />
                     <Input id="oms-sheet-url" value={omsSheetUrl} onChange={e => setOmsSheetUrl(e.target.value)} />
                 </div>
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="base-folder-path">Base Folder Path (for images)</Label>
+                    <div className="flex items-center gap-2">
+                        <Folder className="text-muted-foreground" />
+                        <Input id="base-folder-path" value={baseFolderPath} onChange={e => setBaseFolderPath(e.target.value)} />
+                    </div>
                 </div>
             </div>
              <div className="space-y-2">

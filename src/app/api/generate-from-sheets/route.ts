@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
         const templateFile = formData.get('template') as File | null;
         const dynamicJsContent = formData.get('dynamicJsContent') as string | null;
         const tier = formData.get('tier') as 'T1' | 'T2' | null;
+        const baseFolderPath = formData.get('baseFolderPath') as string | null;
 
         const parentData = JSON.parse(formData.get('parentData') as string || '{}');
         const creativeData = JSON.parse(formData.get('creativeData') as string || '{}');
@@ -83,7 +84,13 @@ export async function POST(req: NextRequest) {
                 for (const key in dataRow) {
                     const fullVariablePath = `devDynamicContent.${objPath}.${key}`;
                     if (modifiedLine.includes(fullVariablePath)) {
-                        const valueToSet = dataRow[key];
+                        let valueToSet = dataRow[key];
+
+                        // Prepend base path if it's an image
+                        if (baseFolderPath && valueToSet && typeof valueToSet === 'string' && (valueToSet.endsWith('.jpg') || valueToSet.endsWith('.png') || valueToSet.endsWith('.svg'))) {
+                            valueToSet = baseFolderPath + valueToSet;
+                        }
+
                         // Reconstruct the entire line to ensure valid syntax
                         const lineStart = modifiedLine.substring(0, modifiedLine.indexOf('=') + 1);
                         modifiedLine = `${lineStart} '${escapeJS(valueToSet)}';`;
