@@ -89,21 +89,25 @@ export async function POST(req: NextRequest) {
                      if (!dataRow) continue;
                      // Iterate over each key/value pair in the data row
                     for (const key in dataRow) {
-                        // Construct the full JS variable path we're looking for
+                        const valueToSet = dataRow[key];
+
+                        // SPECIAL HANDLING for complex JSON strings, ONLY for T2
+                         if (tier === 'T2' && (key === 'customGroups' || key === 'rd_values' || key === 'rd-values')) {
+                            const varPath = `devDynamicContent.${objPath}.${key}`;
+                            const regex = new RegExp(`(${varPath.replace(/\[/g, '\\[').replace(/\]/g, '\\]')}\\s*=\\s*).*;`);
+                            if (regex.test(modifiedLine)) {
+                                // The value from the sheet is already a stringified JSON. We stringify it *again*
+                                // to create a valid JavaScript string literal containing the original stringified JSON.
+                                modifiedLine = modifiedLine.replace(regex, `$1${JSON.stringify(valueToSet || '[]')};`);
+                                return modifiedLine; // Exit early, line is processed.
+                            }
+                        }
+
+                        // Regular handling for all other keys
                         const varPath = `devDynamicContent.${objPath}.${key}`;
                         const regex = new RegExp(`(${varPath.replace(/\[/g, '\\[').replace(/\]/g, '\\]')}\\s*=\\s*).*;`);
                         
                         if (regex.test(modifiedLine)) {
-                            const valueToSet = dataRow[key];
-
-                            // SPECIAL HANDLING for complex JSON strings.
-                             if (tier === 'T2' && (key === 'customGroups' || key === 'rd_values' || key === 'rd-values')) {
-                                // The value from the sheet is already a stringified JSON. We stringify it *again*
-                                // to create a valid JavaScript string literal containing the original stringified JSON.
-                                modifiedLine = line.replace(regex, `$1${JSON.stringify(valueToSet || '[]')};`);
-                                return modifiedLine; // Exit early, line is processed.
-                            }
-                            
                             const trimmedValue = String(valueToSet || '').trim();
                             const isImage = trimmedValue.endsWith('.jpg') || trimmedValue.endsWith('.png') || trimmedValue.endsWith('.svg');
                             
