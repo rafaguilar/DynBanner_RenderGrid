@@ -40,6 +40,16 @@ export async function POST(req: NextRequest) {
     }
 
     const csvText = await response.text();
+
+    // --- Start Debugging Logs ---
+    const tabsToLog = ["parent", "creative_data", "Jeep"];
+    if (tabsToLog.includes(sheetName)) {
+      const headers = csvText.split('\n')[0];
+      console.log(`--- Columns for Google Sheet tab: "${sheetName}" ---`);
+      console.log(headers);
+      console.log(`----------------------------------------------------`);
+    }
+    // --- End Debugging Logs ---
     
     return new NextResponse(csvText, {
         status: 200,
