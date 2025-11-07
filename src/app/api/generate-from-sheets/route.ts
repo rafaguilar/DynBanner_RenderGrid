@@ -29,8 +29,6 @@ export async function POST(req: NextRequest) {
         const creativeData = JSON.parse(formData.get('creativeData') as string || '{}');
         const omsData = JSON.parse(formData.get('omsData') as string || '{}');
 
-        console.log("Raw value of creative_data.f1_image:", creativeData?.f1_image);
-
         if (!templateFile || !dynamicJsContent || !tier) {
             return NextResponse.json({ error: 'Missing required form data' }, { status: 400 });
         }
@@ -75,7 +73,7 @@ export async function POST(req: NextRequest) {
         // Robustly replace variable values
         const jsLines = newDynamicJsContent.split('\n');
 
-        const escapeJS = (value: any) => {
+        const escapeJS = (value: any): string => {
           if (value === null || value === undefined) return '';
           return String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         };
@@ -86,25 +84,35 @@ export async function POST(req: NextRequest) {
             for (const [objPath, dataRow] of Object.entries(combinedData)) {
                 if (lineModified) break;
                 for (const key in dataRow) {
-                    const fullVariablePath = `devDynamicContent.${objPath}.${key}`;
-                    if (modifiedLine.includes(fullVariablePath)) {
-                        let valueToSet = dataRow[key];
-                        
-                        // Force to string and trim
-                        const valueAsString = String(valueToSet || '').trim();
+                    
+                    const valueToSet = dataRow[key];
+                    const valueAsString = String(valueToSet || '').trim();
+                    const isImage = valueAsString.endsWith('.jpg') || valueAsString.endsWith('.png') || valueAsString.endsWith('.svg');
 
-                        // Prepend base path if it's an image
-                        const isImage = valueAsString.endsWith('.jpg') || valueAsString.endsWith('.png') || valueAsString.endsWith('.svg');
-                        
-                        if (baseFolderPath && isImage) {
-                            valueToSet = baseFolderPath + valueAsString;
+                    // Construct the variable path to search for in the JS file
+                    const varPath = `devDynamicContent.${objPath}.${key}`;
+
+                    if (isImage) {
+                         // For images, we target the `.Url` property
+                        const fullVariablePath = `${varPath}.Url`;
+                        if (modifiedLine.includes(fullVariablePath)) {
+                            let finalUrl = valueAsString;
+                            if (baseFolderPath) {
+                                finalUrl = baseFolderPath + valueAsString;
+                            }
+                            const lineStart = modifiedLine.substring(0, modifiedLine.indexOf('=') + 1);
+                            modifiedLine = `${lineStart} '${escapeJS(finalUrl)}';`;
+                            lineModified = true;
+                            break; 
                         }
-
-                        // Reconstruct the entire line to ensure valid syntax
-                        const lineStart = modifiedLine.substring(0, modifiedLine.indexOf('=') + 1);
-                        modifiedLine = `${lineStart} '${escapeJS(valueToSet)}';`;
-                        lineModified = true;
-                        break; 
+                    } else {
+                        // For non-images, we target the variable itself
+                        if (modifiedLine.includes(varPath) && !modifiedLine.includes(`${varPath}.`)) {
+                           const lineStart = modifiedLine.substring(0, modifiedLine.indexOf('=') + 1);
+                           modifiedLine = `${lineStart} '${escapeJS(valueToSet)}';`;
+                           lineModified = true;
+                           break; 
+                        }
                     }
                 }
             }
