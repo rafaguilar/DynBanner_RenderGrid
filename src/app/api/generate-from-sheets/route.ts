@@ -76,30 +76,32 @@ export async function POST(req: NextRequest) {
             if (value === null || value === undefined) return '';
             return String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         };
-
+        
         const newJsLines = jsLines.map(line => {
             let modifiedLine = line;
             let lineModified = false;
             for (const [objPath, dataRow] of Object.entries(combinedData)) {
                 if (lineModified) break;
                 for (const key in dataRow) {
-                    const valueToSet = String(dataRow[key] || '').trim();
-                    const varPath = `devDynamicContent.${objPath}.${key}`;
-                    const isImage = valueToSet.endsWith('.jpg') || valueToSet.endsWith('.png') || valueToSet.endsWith('.svg');
+                    const valueToSet = String(dataRow[key] || '');
+                    
+                    const trimmedValue = valueToSet.trim();
+                    const isImage = trimmedValue.endsWith('.jpg') || trimmedValue.endsWith('.png') || trimmedValue.endsWith('.svg');
 
                     if (isImage) {
-                        const fullVariablePath = `${varPath}.Url`;
-                        if (modifiedLine.includes(fullVariablePath)) {
-                            let finalUrl = valueToSet;
+                         const varPathWithUrl = `devDynamicContent.${objPath}.${key}.Url`;
+                         if (modifiedLine.includes(varPathWithUrl)) {
+                            let finalUrl = trimmedValue;
                             if (baseFolderPath) {
-                                finalUrl = baseFolderPath + valueToSet;
+                                finalUrl = baseFolderPath + trimmedValue;
                             }
                              const lineStart = modifiedLine.substring(0, modifiedLine.indexOf('=') + 1);
                              modifiedLine = `${lineStart} '${escapeJS(finalUrl)}';`;
                              lineModified = true;
-                             break;
+                             break; 
                         }
                     } else {
+                         const varPath = `devDynamicContent.${objPath}.${key}`;
                          if (modifiedLine.includes(varPath) && !modifiedLine.includes(`${varPath}.`)) {
                            const lineStart = modifiedLine.substring(0, modifiedLine.indexOf('=') + 1);
                            modifiedLine = `${lineStart} '${escapeJS(valueToSet)}';`;
@@ -158,7 +160,11 @@ export async function POST(req: NextRequest) {
 
         const { width, height } = getAdSize(variationHtmlContent);
         
-        const variationName = `Preview_${parentData?.id || parentData?.ID || 'data'}_${Date.now()}`.replace(/[^a-zA-Z0-9_-]/g, '');
+        const parentId = parentData?.id || parentData?.ID || 'data';
+        const customOffer = parentData?.custom_offer || '';
+        const timestamp = Date.now().toString().slice(-6);
+
+        const variationName = `Preview_${parentId}_${customOffer}_${timestamp}`.replace(/[^a-zA-Z0-9_-]/g, '');
 
         const variation = {
             name: variationName,
