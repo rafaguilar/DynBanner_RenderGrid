@@ -11,8 +11,9 @@ import {
 } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { Textarea } from './ui/textarea';
 import { Label } from './ui/label';
-import { Wand2, Loader2, Database, RefreshCw, Sheet, Archive, Download, Folder } from 'lucide-react';
+import { Wand2, Loader2, Database, RefreshCw, Sheet, Archive, Download, Folder, Info } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   Select,
@@ -46,9 +47,9 @@ export function DynBannerBuilder() {
   const [creativeTab, setCreativeTab] = useState('creative_data');
   const [omsTab, setOmsTab] = useState('Jeep');
   
-  const [parentId, setParentId] = useState('');
+  const [parentIds, setParentIds] = useState('');
   const [creativeId, setCreativeId] = useState('');
-  const [omsId, setOmsId] = useState('');
+  const [omsIds, setOmsIds] = useState('');
 
 
   
@@ -159,27 +160,50 @@ export function DynBannerBuilder() {
     }
     
     setIsLoading(true);
-    setLoadingMessage('Generating banner preview...');
-    
+    setLoadingMessage('Generating banner previews...');
+
     try {
-        const findRowById = (data: any[] | undefined, id: string): Record<string, any> => {
-            if (!data) return {};
-            // The 'ID' column might be capitalized differently
-            const row = data.find(r => String(r.id).trim() === id.trim() || String(r.ID).trim() === id.trim());
-            return row || {};
+        const findRowById = (data: any[] | undefined, id: string): Record<string, any> | null => {
+            if (!data || !id) return null;
+            const trimmedId = id.trim();
+            const row = data.find(r => String(r.id).trim() === trimmedId || String(r.ID).trim() === trimmedId);
+            return row || null;
         }
 
-        const parentData = findRowById(sheetData[parentSheetUrl]?.[parentTab], parentId);
         const creativeData = findRowById(sheetData[parentSheetUrl]?.[creativeTab], creativeId);
-        const omsData = findRowById(sheetData[omsSheetUrl]?.[omsTab], omsId);
+        if (!creativeData) throw new Error(`Could not find Creative data with ID: ${creativeId}`);
 
-        console.log("--- Selected Parent Data ---", parentData);
-        console.log("--- Selected Creative Data ---", creativeData);
-        console.log("--- Selected OMS Data ---", omsData);
-        
-        if (Object.keys(parentData).length === 0) throw new Error(`Could not find Parent data with ID: ${parentId}`);
-        if (Object.keys(creativeData).length === 0) throw new Error(`Could not find Creative data with ID: ${creativeId}`);
-        if (Object.keys(omsData).length === 0) throw new Error(`Could not find OMS data with ID: ${omsId} in tab ${omsTab}`);
+        const batchRequests = [];
+
+        if (selectedTier === 'T1') {
+            const parentIdList = parentIds.split(',').map(id => id.trim()).filter(id => id);
+            if (parentIdList.length === 0) throw new Error('Please provide at least one Parent ID for T1 batch generation.');
+            
+            const omsData = findRowById(sheetData[omsSheetUrl]?.[omsTab], omsIds);
+            if (!omsData) throw new Error(`Could not find OMS data with ID: ${omsIds}`);
+            
+            for (const pId of parentIdList) {
+                const parentData = findRowById(sheetData[parentSheetUrl]?.[parentTab], pId);
+                if (!parentData) throw new Error(`Could not find Parent data with ID: ${pId}`);
+                batchRequests.push({ parentData, creativeData, omsData });
+            }
+        } else { // T2
+            const omsIdList = omsIds.split(',').map(id => id.trim()).filter(id => id);
+            if (omsIdList.length === 0) throw new Error('Please provide at least one OMS ID for T2 batch generation.');
+            
+            const parentData = findRowById(sheetData[parentSheetUrl]?.[parentTab], parentIds);
+             if (!parentData) throw new Error(`Could not find Parent data with ID: ${parentIds}`);
+
+            for (const oId of omsIdList) {
+                const omsData = findRowById(sheetData[omsSheetUrl]?.[omsTab], oId);
+                if (!omsData) throw new Error(`Could not find OMS data with ID: ${oId} in tab ${omsTab}`);
+                batchRequests.push({ parentData, creativeData, omsData });
+            }
+        }
+
+        if (batchRequests.length === 0) {
+            throw new Error("No valid data combinations found to generate previews.");
+        }
 
 
         const formData = new FormData();
@@ -187,13 +211,7 @@ export function DynBannerBuilder() {
         formData.append('dynamicJsContent', dynamicJsContent);
         formData.append('tier', selectedTier);
         formData.append('baseFolderPath', baseFolderPath);
-        
-        // Send the found data objects
-        formData.append('parentData', JSON.stringify(parentData));
-        formData.append('creativeData', JSON.stringify(creativeData));
-
-        // For OMS, we might need to adjust based on tier.
-        formData.append('omsData', JSON.stringify(omsData));
+        formData.append('batchRequest', JSON.stringify(batchRequests));
         
         const response = await fetch('/api/generate-from-sheets', {
             method: 'POST',
@@ -202,12 +220,12 @@ export function DynBannerBuilder() {
 
         if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.error || "Failed to generate banner.");
+            throw new Error(error.error || "Failed to generate banners.");
         }
 
-        const newVariation: BannerVariation = await response.json();
-        setBannerVariations(prev => [...prev, newVariation]);
-        toast({ title: 'Preview Generated', description: `Added ${newVariation.name} to the list.` });
+        const newVariations: BannerVariation[] = await response.json();
+        setBannerVariations(prev => [...prev, ...newVariations]);
+        toast({ title: 'Previews Generated', description: `Added ${newVariations.length} new previews to the list.` });
         
     } catch(error) {
        const message = error instanceof Error ? error.message : 'An unknown error occurred.';
@@ -269,6 +287,9 @@ export function DynBannerBuilder() {
   };
 
   const hasData = Object.keys(sheetData).length > 0;
+  
+  const isGenerateDisabled = isLoading || (selectedTier === 'T1' && (!parentIds || !creativeId || !omsIds)) || (selectedTier === 'T2' && (!parentIds || !creativeId || !omsIds));
+
 
   return (
     <div className="space-y-8">
@@ -340,7 +361,7 @@ export function DynBannerBuilder() {
             <CardHeader>
               <CardTitle className="font-headline">2. Select Data by ID</CardTitle>
               <CardDescription>
-                Choose the Tier, tabs, and specific IDs to build your banner.
+                Choose the Tier, then enter the IDs to build your banner previews.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -355,9 +376,9 @@ export function DynBannerBuilder() {
 
                 {/* ID SELECTION */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Parent */}
+                     {/* Parent */}
                     <div className="p-4 border rounded-lg space-y-2">
-                        <Label className="font-medium" htmlFor="parent-id">Parent Data</Label>
+                        <Label className="font-medium" htmlFor="parent-ids">Parent Data</Label>
                         <div className="flex gap-2">
                             <Select value={parentTab} onValueChange={setParentTab}>
                                 <SelectTrigger><SelectValue placeholder="Select tab..." /></SelectTrigger>
@@ -365,8 +386,13 @@ export function DynBannerBuilder() {
                                     {availableParentTabs.filter(t => t === 'parent').map(tab => <SelectItem key={tab} value={tab}>{tab}</SelectItem>)}
                                 </SelectContent>
                             </Select>
-                            <Input id="parent-id" type="text" placeholder="Enter ID" value={parentId} onChange={e => setParentId(e.target.value)} className="w-24" />
+                            {selectedTier === 'T1' ? (
+                               <Textarea id="parent-ids" placeholder="Enter comma-separated IDs..." value={parentIds} onChange={e => setParentIds(e.target.value)} />
+                            ) : (
+                               <Input id="parent-ids" type="text" placeholder="Enter ID" value={parentIds} onChange={e => setParentIds(e.target.value)} />
+                            )}
                         </div>
+                         <p className="text-xs text-muted-foreground flex items-center gap-1 pt-1"><Info size={14}/> {selectedTier === 'T1' ? 'Enter multiple Parent IDs for batch creation.' : 'Enter a single Parent ID.'}</p>
                     </div>
                     {/* Creative */}
                      <div className="p-4 border rounded-lg space-y-2">
@@ -378,14 +404,14 @@ export function DynBannerBuilder() {
                                     {availableParentTabs.filter(t => t === 'creative_data').map(tab => <SelectItem key={tab} value={tab}>{tab}</SelectItem>)}
                                 </SelectContent>
                             </Select>
-                            <Input id="creative-id" type="text" placeholder="Enter ID" value={creativeId} onChange={e => setCreativeId(e.target.value)} className="w-24" />
+                            <Input id="creative-id" type="text" placeholder="Enter ID" value={creativeId} onChange={e => setCreativeId(e.target.value)} className="w-full" />
                         </div>
                     </div>
                 </div>
 
                  {/* OMS */}
                  <div className="p-4 border rounded-lg space-y-2">
-                    <Label className="font-medium" htmlFor="oms-id">OMS Data</Label>
+                    <Label className="font-medium" htmlFor="oms-ids">OMS Data</Label>
                     <div className="flex gap-2">
                         <Select value={omsTab} onValueChange={setOmsTab}>
                             <SelectTrigger><SelectValue placeholder="Select brand..." /></SelectTrigger>
@@ -393,25 +419,30 @@ export function DynBannerBuilder() {
                                 {availableOmsTabs.map(tab => <SelectItem key={tab} value={tab}>{tab}</SelectItem>)}
                             </SelectContent>
                         </Select>
-                        <Input id="oms-id" type="text" placeholder="Enter ID" value={omsId} onChange={e => setOmsId(e.target.value)} className="w-24" />
+                        {selectedTier === 'T2' ? (
+                            <Textarea id="oms-ids" placeholder="Enter comma-separated IDs..." value={omsIds} onChange={e => setOmsIds(e.target.value)} />
+                        ) : (
+                            <Input id="oms-ids" type="text" placeholder="Enter ID" value={omsIds} onChange={e => setOmsIds(e.target.value)} />
+                        )}
                     </div>
+                    <p className="text-xs text-muted-foreground flex items-center gap-1 pt-1"><Info size={14}/> {selectedTier === 'T2' ? 'Enter multiple OMS IDs for batch creation.' : 'Enter a single OMS ID.'}</p>
                 </div>
                  <p className="text-xs text-muted-foreground px-1">
                     Enter the value from the 'id' or 'ID' column for the data you wish to use.
                 </p>
             </CardContent>
              <CardFooter>
-                <Button onClick={handleGenerate} disabled={isLoading || !parentId || !creativeId || !omsId } className="ml-auto" size="lg">
+                <Button onClick={handleGenerate} disabled={isGenerateDisabled} className="ml-auto" size="lg">
                     {isLoading && !loadingMessage.includes('Fetching') ? <Loader2 className="animate-spin mr-2" /> : <Wand2 className="mr-2" />}
-                    Generate Preview
+                    Generate Previews
                 </Button>
             </CardFooter>
           </Card>
         )}
       </div>
 
-       {isLoading && (
-        <div className="flex items-center justify-center gap-2 text-muted-foreground">
+       {isLoading && loadingMessage && (
+        <div className="flex items-center justify-center gap-2 text-muted-foreground py-4">
             <Loader2 className="animate-spin" />
             <span>{loadingMessage}</span>
         </div>

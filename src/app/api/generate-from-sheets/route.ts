@@ -31,16 +31,16 @@ export async function POST(req: NextRequest) {
         const dynamicJsContent = formData.get('dynamicJsContent') as string | null;
         const tier = formData.get('tier') as 'T1' | 'T2' | null;
         const baseFolderPath = formData.get('baseFolderPath') as string | null;
-
-        const parentData = JSON.parse(formData.get('parentData') as string || '{}');
-        const creativeData = JSON.parse(formData.get('creativeData') as string || '{}');
-        const omsData = JSON.parse(formData.get('omsData') as string || '{}');
-
-        if (!templateFile || !dynamicJsContent || !tier) {
+        const batchRequest = formData.get('batchRequest') as string | null;
+        
+        if (!templateFile || !dynamicJsContent || !tier || !batchRequest) {
             return NextResponse.json({ error: 'Missing required form data' }, { status: 400 });
         }
-        
-        // 1. Unpack original template to read files
+
+        const batchData = JSON.parse(batchRequest);
+        const variations: any[] = [];
+
+        // 1. Unpack original template to read files ONCE
         const templateBuffer = Buffer.from(await templateFile.arrayBuffer());
         const zip = await JSZip.loadAsync(templateBuffer);
         const templateFiles: Record<string, Buffer> = {};
@@ -68,128 +68,129 @@ export async function POST(req: NextRequest) {
         if (!dynamicJsPath) dynamicJsPath = 'Dynamic.js';
 
 
-        // 2. Generate new Dynamic.js content
-        let newDynamicJsContent = dynamicJsContent;
+        for (const data of batchData) {
+            const { parentData, creativeData, omsData } = data;
+            
+            // 2. Generate new Dynamic.js content FOR THIS VARIATION
+            let newDynamicJsContent = dynamicJsContent;
 
-        const combinedData = {
-            'parent[0]': parentData,
-            'creative_data[0]': creativeData,
-            'OMS[0]': omsData,
-        };
-        
-        const jsLines = newDynamicJsContent.split('\n');
+            const combinedData = {
+                'parent[0]': parentData,
+                'creative_data[0]': creativeData,
+                'OMS[0]': omsData,
+            };
+            
+            const jsLines = newDynamicJsContent.split('\n');
 
-        const newJsLines = jsLines.map(line => {
-            let modifiedLine = line;
-            // Iterate over each data object (parent, creative, oms)
-            for (const [objPath, dataRow] of Object.entries(combinedData)) {
-                 // Iterate over each key/value pair in the data row
-                for (const key in dataRow) {
-                    // Construct the full JS variable path we're looking for
-                    const varPath = `devDynamicContent.${objPath}.${key}`;
-                    const regex = new RegExp(`(${varPath.replace(/\[/g, '\\[').replace(/\]/g, '\\]')}\\s*=\\s*).*;`);
-                    
-                    // Check if the current line matches the variable we want to replace
-                    if (regex.test(modifiedLine)) {
-                        const valueToSet = dataRow[key];
-
-                        // SPECIAL HANDLING for complex JSON strings.
-                        // These are already strings, but we need to ensure they are injected correctly.
-                        if (tier === 'T2' && (key === 'customGroups' || key === 'rd_values' || key === 'rd-values')) {
-                            // The value is a string that contains JSON. We must stringify it to escape it properly for JS.
-                            const replacementValue = JSON.stringify(valueToSet || '[]');
-                            modifiedLine = line.replace(regex, `$1${replacementValue};`);
-                            return modifiedLine; // Exit early, line is processed.
-                        }
+            const newJsLines = jsLines.map(line => {
+                let modifiedLine = line;
+                // Iterate over each data object (parent, creative, oms)
+                for (const [objPath, dataRow] of Object.entries(combinedData)) {
+                     if (!dataRow) continue;
+                     // Iterate over each key/value pair in the data row
+                    for (const key in dataRow) {
+                        // Construct the full JS variable path we're looking for
+                        const varPath = `devDynamicContent.${objPath}.${key}`;
+                        const regex = new RegExp(`(${varPath.replace(/\[/g, '\\[').replace(/\]/g, '\\]')}\\s*=\\s*).*;`);
                         
-                        // STANDARD HANDLING for simple strings and images
-                        const trimmedValue = String(valueToSet || '').trim();
-                        const isImage = trimmedValue.endsWith('.jpg') || trimmedValue.endsWith('.png') || trimmedValue.endsWith('.svg');
-                        
-                        if (isImage) {
-                             const imageVarPath = `${varPath}.Url`;
-                             const imageRegex = new RegExp(`(${imageVarPath.replace(/\[/g, '\\[').replace(/\]/g, '\\]')}\\s*=\\s*).*;`);
-                             if (imageRegex.test(line)) {
-                                let finalUrl = trimmedValue;
-                                if (baseFolderPath && !trimmedValue.startsWith('http')) {
-                                    finalUrl = baseFolderPath + trimmedValue;
-                                }
-                                modifiedLine = line.replace(imageRegex, `$1${safeStringify(finalUrl)};`);
+                        if (regex.test(modifiedLine)) {
+                            const valueToSet = dataRow[key];
+
+                            // SPECIAL HANDLING for complex JSON strings.
+                             if (tier === 'T2' && (key === 'customGroups' || key === 'rd_values' || key === 'rd-values')) {
+                                // The value from the sheet is already a stringified JSON. We stringify it *again*
+                                // to create a valid JavaScript string literal containing the original stringified JSON.
+                                modifiedLine = line.replace(regex, `$1${JSON.stringify(valueToSet || '[]')};`);
+                                return modifiedLine; // Exit early, line is processed.
+                            }
+                            
+                            const trimmedValue = String(valueToSet || '').trim();
+                            const isImage = trimmedValue.endsWith('.jpg') || trimmedValue.endsWith('.png') || trimmedValue.endsWith('.svg');
+                            
+                            if (isImage) {
+                                 const imageVarPath = `${varPath}.Url`;
+                                 const imageRegex = new RegExp(`(${imageVarPath.replace(/\[/g, '\\[').replace(/\]/g, '\\]')}\\s*=\\s*).*;`);
+                                 if (imageRegex.test(line)) {
+                                    let finalUrl = trimmedValue;
+                                    if (baseFolderPath && !trimmedValue.startsWith('http')) {
+                                        finalUrl = baseFolderPath + trimmedValue;
+                                    }
+                                    modifiedLine = line.replace(imageRegex, `$1${safeStringify(finalUrl)};`);
+                                    return modifiedLine; // Exit early
+                                 }
+                            } else {
+                                modifiedLine = line.replace(regex, `$1${safeStringify(valueToSet)};`);
                                 return modifiedLine; // Exit early
-                             }
-                        } else {
-                            // It's a simple string value, use safeStringify
-                            modifiedLine = line.replace(regex, `$1${safeStringify(valueToSet)};`);
-                            return modifiedLine; // Exit early
+                            }
                         }
                     }
                 }
-            }
-            return modifiedLine; // Return original line if no match
-        });
-        
-        // Final pass for the TIER variable
-        const tierVarPath = 'devDynamicContent.parent[0].TIER';
-        let tierSet = false;
-        for (let i = 0; i < newJsLines.length; i++) {
-            if (newJsLines[i].includes(tierVarPath)) {
-                const lineStart = newJsLines[i].substring(0, newJsLines[i].indexOf('=') + 1);
-                newJsLines[i] = `${lineStart} '${tier}';`;
-                tierSet = true;
-                break;
-            }
-        }
-        
-        newDynamicJsContent = newJsLines.join('\n');
-        
-        // 3. Create a new temp dir for this variation and write files
-        const bannerId = generateUniqueId();
-        const tmpDir = path.join(os.tmpdir(), 'banner-rendergrid-previews', bannerId);
-        await fs.mkdir(tmpDir, { recursive: true });
-
-        const newFiles = { ...templateFiles };
-        if(dynamicJsPath) {
-            newFiles[dynamicJsPath] = Buffer.from(newDynamicJsContent, 'utf-8');
-        }
-
-
-        let variationHtmlFile : string | null = null;
-        let variationHtmlContent: string = '';
-
-        for (const fileName in newFiles) {
-            await fs.writeFile(path.join(tmpDir, fileName), newFiles[fileName]);
-            if(fileName.toLowerCase().endsWith('.html')) {
-                variationHtmlFile = fileName;
-                variationHtmlContent = newFiles[fileName].toString('utf-8');
-            }
-        }
-        if (!variationHtmlFile) { // fallback
-            for (const fileName in newFiles) {
-                if (fileName.toLowerCase().endsWith('.html')) {
-                    variationHtmlFile = fileName;
-                    variationHtmlContent = newFiles[fileName].toString('utf-8');
+                return modifiedLine; // Return original line if no match
+            });
+            
+            const tierVarPath = 'devDynamicContent.parent[0].TIER';
+            let tierSet = false;
+            for (let i = 0; i < newJsLines.length; i++) {
+                if (newJsLines[i].includes(tierVarPath)) {
+                    const lineStart = newJsLines[i].substring(0, newJsLines[i].indexOf('=') + 1);
+                    newJsLines[i] = `${lineStart} '${tier}';`;
+                    tierSet = true;
                     break;
                 }
             }
+            
+            newDynamicJsContent = newJsLines.join('\n');
+            
+            // 3. Create a new temp dir for this variation and write files
+            const bannerId = generateUniqueId();
+            const tmpDir = path.join(os.tmpdir(), 'banner-rendergrid-previews', bannerId);
+            await fs.mkdir(tmpDir, { recursive: true });
+
+            const newFiles = { ...templateFiles };
+            if(dynamicJsPath) {
+                newFiles[dynamicJsPath] = Buffer.from(newDynamicJsContent, 'utf-8');
+            }
+
+
+            let variationHtmlFile : string | null = null;
+            let variationHtmlContent: string = '';
+
+            for (const fileName in newFiles) {
+                await fs.writeFile(path.join(tmpDir, fileName), newFiles[fileName]);
+                if(fileName.toLowerCase().endsWith('.html')) {
+                    variationHtmlFile = fileName;
+                    variationHtmlContent = newFiles[fileName].toString('utf-8');
+                }
+            }
+            if (!variationHtmlFile) { // fallback
+                for (const fileName in newFiles) {
+                    if (fileName.toLowerCase().endsWith('.html')) {
+                        variationHtmlFile = fileName;
+                        variationHtmlContent = newFiles[fileName].toString('utf-8');
+                        break;
+                    }
+                }
+            }
+
+            const { width, height } = getAdSize(variationHtmlContent);
+            
+            const parentId = parentData?.id || parentData?.ID || 'data';
+            const omsId = omsData?.id || omsData?.ID || '';
+            const customOffer = parentData?.custom_offer || '';
+            const timestamp = Date.now().toString().slice(-6);
+
+            const variationName = `Preview_${parentId}_${omsId || customOffer}_${timestamp}`.replace(/[^a-zA-Z0-9_-]/g, '');
+
+            variations.push({
+                name: variationName,
+                bannerId,
+                htmlFile: variationHtmlFile || 'index.html',
+                width,
+                height,
+            });
         }
 
-        const { width, height } = getAdSize(variationHtmlContent);
-        
-        const parentId = parentData?.id || parentData?.ID || 'data';
-        const customOffer = parentData?.custom_offer || '';
-        const timestamp = Date.now().toString().slice(-6);
-
-        const variationName = `Preview_${parentId}_${customOffer}_${timestamp}`.replace(/[^a-zA-Z0-9_-]/g, '');
-
-        const variation = {
-            name: variationName,
-            bannerId,
-            htmlFile: variationHtmlFile || 'index.html',
-            width,
-            height,
-        };
-
-        return NextResponse.json(variation);
+        return NextResponse.json(variations);
 
     } catch (error) {
         console.error('Generation error:', error);
