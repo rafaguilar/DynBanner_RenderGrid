@@ -29,6 +29,8 @@ export async function POST(req: NextRequest) {
         const creativeData = JSON.parse(formData.get('creativeData') as string || '{}');
         const omsData = JSON.parse(formData.get('omsData') as string || '{}');
 
+        console.log("Raw value of creative_data.f1_image:", creativeData?.f1_image);
+
         if (!templateFile || !dynamicJsContent || !tier) {
             return NextResponse.json({ error: 'Missing required form data' }, { status: 400 });
         }
@@ -80,13 +82,13 @@ export async function POST(req: NextRequest) {
 
         const newJsLines = jsLines.map(line => {
             let modifiedLine = line;
+            let lineModified = false;
             for (const [objPath, dataRow] of Object.entries(combinedData)) {
+                if (lineModified) break;
                 for (const key in dataRow) {
                     const fullVariablePath = `devDynamicContent.${objPath}.${key}`;
                     if (modifiedLine.includes(fullVariablePath)) {
                         let valueToSet = dataRow[key];
-
-                        console.log(`[Processing] Key: ${key}, Original Value: "${valueToSet}"`);
                         
                         // Force to string and trim
                         const valueAsString = String(valueToSet || '').trim();
@@ -96,12 +98,12 @@ export async function POST(req: NextRequest) {
                         
                         if (baseFolderPath && isImage) {
                             valueToSet = baseFolderPath + valueAsString;
-                            console.log(`[Image Found] Prepended base path for ${key}. New Value: "${valueToSet}"`);
                         }
 
                         // Reconstruct the entire line to ensure valid syntax
                         const lineStart = modifiedLine.substring(0, modifiedLine.indexOf('=') + 1);
                         modifiedLine = `${lineStart} '${escapeJS(valueToSet)}';`;
+                        lineModified = true;
                         break; 
                     }
                 }
